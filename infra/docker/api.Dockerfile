@@ -30,10 +30,13 @@ RUN addgroup -S nodegroup && adduser -S nodeuser -G nodegroup
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build /app/apps/api/tsconfig.json ./apps/api/tsconfig.json
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/packages ./packages
+COPY --from=build /app/packages/config/node_modules ./packages/config/node_modules
+COPY --from=build /app/packages/shared-validation/node_modules ./packages/shared-validation/node_modules
 
 ENV NODE_ENV=production
 EXPOSE 3001
