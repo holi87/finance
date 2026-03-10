@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "useDefineForClassFields": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@finance/config": ["../../packages/config/src/index.ts"],
+      "@finance/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@finance/shared-validation": ["../../packages/shared-validation/src/index.ts"],
+      "@finance/sync-engine": ["../../packages/sync-engine/src/index.ts"],
+      "@finance/ui": ["../../packages/ui/src/index.tsx"]
+    },
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"]
+}

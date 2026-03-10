@@ -1,0 +1,17 @@
+node_modules
+dist
+coverage
+.turbo
+.vite
+.DS_Store
+.env
+.env.local
+.env.production
+apps/api/prisma/dev.db
+apps/api/prisma/dev.db-journal
+apps/api/prisma/*.js
+apps/api/prisma/*.js.map
+apps/api/prisma/*.d.ts
+apps/web/dist
+pnpm-debug.log
+*.tsbuildinfo
