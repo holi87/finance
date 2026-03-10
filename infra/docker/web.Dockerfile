@@ -27,4 +27,5 @@ RUN pnpm --filter @finance/config build \
 
 FROM nginx:1.29-alpine AS runtime
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+COPY infra/docker/web/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
