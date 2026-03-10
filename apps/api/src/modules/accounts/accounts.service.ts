@@ -119,9 +119,9 @@ export class AccountsService {
       entityType: 'account',
       entityId: account.id,
       operationType: 'update',
-      entityVersion: account.version,
+      entityVersion: current?.version ?? account.version,
       changedBy: userId,
-      payloadSnapshot: account,
+      payloadSnapshot: current ?? account,
     });
 
     return mapAccount(current ?? account);

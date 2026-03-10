@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyLocalTransactionToAccount,
+  calculateAccountBalance,
   createLocalAccount,
   createLocalTransaction,
 } from './db';
@@ -48,5 +49,32 @@ describe('local db helpers', () => {
     });
 
     expect(nextAccount.currentBalanceCached).toBe('74.50');
+  });
+
+  it('recalculates account balance from local transaction history', () => {
+    const balance = calculateAccountBalance('20000.00', [
+      {
+        type: 'expense',
+        amount: '500.00',
+        deletedAt: null,
+      },
+      {
+        type: 'income',
+        amount: '250.00',
+        deletedAt: null,
+      },
+      {
+        type: 'transfer',
+        amount: '-100.00',
+        deletedAt: null,
+      },
+      {
+        type: 'expense',
+        amount: '50.00',
+        deletedAt: new Date().toISOString(),
+      },
+    ]);
+
+    expect(balance).toBe('19650.00');
   });
 });

@@ -108,8 +108,13 @@ export async function replaceWorkspaceSnapshot(input: {
         db.budgetLimits.where('workspaceId').equals(input.workspaceId).delete(),
       ]);
 
+      const accounts = reconcileWorkspaceAccounts(
+        input.accounts,
+        input.transactions,
+      );
+
       await Promise.all([
-        db.accounts.bulkPut(input.accounts),
+        db.accounts.bulkPut(accounts),
         db.categories.bulkPut(input.categories),
         db.transactions.bulkPut(input.transactions),
         db.budgetPeriods.bulkPut(input.budgetPeriods),
@@ -268,15 +273,25 @@ export async function applyRemoteChange(change: {
   payload: Record<string, unknown>;
 }) {
   switch (change.entityType) {
-    case 'account':
-      await db.accounts.put(normalizeAccount(change.payload));
+    case 'account': {
+      const account = normalizeAccount(change.payload);
+      await db.accounts.put(account);
+      await recalculateLocalAccountBalances(account.workspaceId, [account.id]);
       break;
+    }
     case 'category':
       await db.categories.put(normalizeCategory(change.payload));
       break;
-    case 'transaction':
-      await db.transactions.put(normalizeTransaction(change.payload));
+    case 'transaction': {
+      const transaction = normalizeTransaction(change.payload);
+      const previous = await db.transactions.get(transaction.id);
+      await db.transactions.put(transaction);
+      await recalculateLocalAccountBalances(transaction.workspaceId, [
+        previous?.accountId,
+        transaction.accountId,
+      ]);
       break;
+    }
     case 'budgetLimit':
       await db.budgetLimits.put(normalizeBudgetLimit(change.payload));
       break;
@@ -412,15 +427,48 @@ export function applyLocalTransactionToAccount(
   transaction: Pick<Transaction, 'type' | 'amount'>,
 ) {
   const amount = Number(transaction.amount);
-  const direction =
-    transaction.type === 'expense' ? -1 : transaction.type === 'income' ? 1 : 0;
 
   return {
     ...account,
     currentBalanceCached: (
       Number(account.currentBalanceCached) +
-      amount * direction
+      (transaction.type === 'expense' ? -amount : amount)
     ).toFixed(2),
+  };
+}
+
+export function calculateAccountBalance(
+  openingBalance: string,
+  transactions: Array<Pick<Transaction, 'type' | 'amount' | 'deletedAt'>>,
+) {
+  const total = transactions.reduce((sum, transaction) => {
+    if (transaction.deletedAt) {
+      return sum;
+    }
+
+    const amount = Number(transaction.amount);
+    if (transaction.type === 'expense') {
+      return sum - amount;
+    }
+
+    return sum + amount;
+  }, Number(openingBalance));
+
+  return total.toFixed(2);
+}
+
+export function reconcileAccountBalance(
+  account: Account,
+  transactions: Array<
+    Pick<Transaction, 'accountId' | 'type' | 'amount' | 'deletedAt'>
+  >,
+) {
+  return {
+    ...account,
+    currentBalanceCached: calculateAccountBalance(
+      account.openingBalance,
+      transactions.filter((transaction) => transaction.accountId === account.id),
+    ),
   };
 }
 
@@ -588,4 +636,32 @@ function normalizeBudgetPeriod(payload: Record<string, unknown>): BudgetPeriod {
     createdAt: String(payload.createdAt),
     updatedAt: String(payload.updatedAt),
   };
+}
+
+function reconcileWorkspaceAccounts(
+  accounts: Account[],
+  transactions: Transaction[],
+) {
+  return accounts.map((account) => reconcileAccountBalance(account, transactions));
+}
+
+async function recalculateLocalAccountBalances(
+  workspaceId: string,
+  accountIds?: Array<string | undefined>,
+) {
+  const [accounts, transactions] = await Promise.all([
+    db.accounts.where('workspaceId').equals(workspaceId).toArray(),
+    db.transactions.where('workspaceId').equals(workspaceId).toArray(),
+  ]);
+  const targetIds =
+    accountIds && accountIds.length > 0
+      ? new Set(accountIds.filter(Boolean) as string[])
+      : null;
+  const nextAccounts = accounts
+    .filter((account) => !targetIds || targetIds.has(account.id))
+    .map((account) => reconcileAccountBalance(account, transactions));
+
+  if (nextAccounts.length > 0) {
+    await db.accounts.bulkPut(nextAccounts);
+  }
 }

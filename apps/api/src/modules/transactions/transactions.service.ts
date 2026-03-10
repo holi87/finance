@@ -103,6 +103,7 @@ export class TransactionsService {
 
     await this.recalculateAccountBalance(input.accountId);
     await this.recordChange('create', workspaceId, userId, transaction);
+    await this.recordAccountBalanceChange(workspaceId, userId, input.accountId);
 
     return mapTransaction(transaction);
   }
@@ -150,6 +151,12 @@ export class TransactionsService {
       await this.recalculateAccountBalance(transaction.accountId);
     }
     await this.recordChange('update', workspaceId, userId, transaction);
+    await Promise.all(
+      [...new Set([existing.accountId, transaction.accountId])].map(
+        (accountId) =>
+          this.recordAccountBalanceChange(workspaceId, userId, accountId),
+      ),
+    );
 
     return mapTransaction(transaction);
   }
@@ -174,6 +181,11 @@ export class TransactionsService {
 
     await this.recalculateAccountBalance(existing.accountId);
     await this.recordChange('delete', workspaceId, userId, transaction);
+    await this.recordAccountBalanceChange(
+      workspaceId,
+      userId,
+      existing.accountId,
+    );
 
     return mapTransaction(transaction);
   }
@@ -240,6 +252,8 @@ export class TransactionsService {
       this.recalculateAccountBalance(input.toAccountId),
       this.recordChange('create', workspaceId, userId, result.outbound),
       this.recordChange('create', workspaceId, userId, result.inbound),
+      this.recordAccountBalanceChange(workspaceId, userId, input.fromAccountId),
+      this.recordAccountBalanceChange(workspaceId, userId, input.toAccountId),
     ]);
 
     return {
@@ -369,6 +383,30 @@ export class TransactionsService {
       userId,
       workspaceId,
       metadata: { transactionId: transaction.id },
+    });
+  }
+
+  private async recordAccountBalanceChange(
+    workspaceId: string,
+    userId: string,
+    accountId: string,
+  ) {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+    });
+
+    if (!account) {
+      return;
+    }
+
+    await this.changeLogService.record({
+      workspaceId,
+      entityType: 'account',
+      entityId: account.id,
+      operationType: 'update',
+      entityVersion: account.version,
+      changedBy: userId,
+      payloadSnapshot: account,
     });
   }
 }

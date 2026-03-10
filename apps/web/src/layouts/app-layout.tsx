@@ -261,6 +261,7 @@ export function AppLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
                     `block rounded-2xl px-4 py-3 text-sm font-medium transition ${
                       isActive

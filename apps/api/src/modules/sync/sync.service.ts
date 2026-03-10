@@ -444,6 +444,11 @@ export class SyncService {
         transaction.version,
         transaction,
       );
+      await this.recordAccountBalanceChange(
+        workspaceId,
+        userId,
+        transaction.accountId,
+      );
       return transaction;
     }
 
@@ -485,6 +490,12 @@ export class SyncService {
         transaction.version,
         transaction,
       );
+      await Promise.all(
+        [...new Set([current.accountId, transaction.accountId])].map(
+          (accountId) =>
+            this.recordAccountBalanceChange(workspaceId, userId, accountId),
+        ),
+      );
       return transaction;
     }
 
@@ -504,6 +515,11 @@ export class SyncService {
       transaction.id,
       transaction.version,
       transaction,
+    );
+    await this.recordAccountBalanceChange(
+      workspaceId,
+      userId,
+      transaction.accountId,
     );
     return transaction;
   }
@@ -694,5 +710,29 @@ export class SyncService {
       changedBy: userId,
       payloadSnapshot,
     });
+  }
+
+  private async recordAccountBalanceChange(
+    workspaceId: string,
+    userId: string,
+    accountId: string,
+  ) {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+    });
+
+    if (!account) {
+      return;
+    }
+
+    await this.recordEntityChange(
+      workspaceId,
+      userId,
+      'account',
+      'update',
+      account.id,
+      account.version,
+      account,
+    );
   }
 }
