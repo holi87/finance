@@ -75,7 +75,7 @@ export function TransactionsPage() {
         title="Transakcje"
         description="Nowe rekordy trafiają najpierw do local DB i outboxa. UI od razu pokazuje wynik, nawet offline."
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {(['all', 'expense', 'income'] as const).map((entry) => (
               <Button
                 key={entry}

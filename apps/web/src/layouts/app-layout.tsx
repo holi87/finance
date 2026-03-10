@@ -88,7 +88,7 @@ export function AppLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-app-radial px-4 pb-36 pt-6 sm:px-6 lg:px-8">
+    <div className="min-h-screen overflow-x-clip bg-app-radial px-3 pb-36 pt-4 sm:px-6 sm:pt-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 lg:flex-row">
         <aside className="hidden w-72 shrink-0 lg:block">
           <Card className="sticky top-6 space-y-6">
@@ -154,18 +154,18 @@ export function AppLayout() {
           </Card>
         </aside>
 
-        <main className="flex-1 space-y-6">
+        <main className="min-w-0 flex-1 space-y-6">
           <Card className="overflow-hidden">
             <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-3">
+              <div className="min-w-0 space-y-3">
                 <p className="text-xs uppercase tracking-[0.35em] text-lime-300">
                   Active context
                 </p>
                 <div className="space-y-2">
-                  <h2 className="font-display text-4xl font-bold tracking-tight text-white">
+                  <h2 className="break-words text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                     {activeWorkspace?.name ?? 'Wybierz workspace'}
                   </h2>
-                  <p className="max-w-2xl text-sm text-stone-400">
+                  <p className="max-w-2xl break-words text-sm text-stone-400">
                     Dane są czytane z lokalnej bazy, a sync pokazuje rzeczywisty
                     stan połączenia i outboxa.
                   </p>
@@ -192,7 +192,7 @@ export function AppLayout() {
                           key={workspace.id}
                           type="button"
                           onClick={() => setActiveWorkspaceId(workspace.id)}
-                          className={`shrink-0 snap-start rounded-2xl border px-4 py-3 text-left transition ${
+                          className={`w-[min(16rem,82vw)] shrink-0 snap-start rounded-2xl border px-4 py-3 text-left transition ${
                             isActive
                               ? 'border-lime-300 bg-lime-300 text-stone-950'
                               : 'border-white/10 bg-white/5 text-stone-200'
@@ -216,7 +216,7 @@ export function AppLayout() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-start gap-3 md:items-end">
+              <div className="flex max-w-full flex-col items-start gap-3 md:items-end">
                 <SyncBadge label={syncLabel} tone={syncTone} />
                 <Button
                   variant="secondary"
@@ -278,7 +278,7 @@ export function AppLayout() {
         </div>
       ) : null}
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-stone-950/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-stone-950/95 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur lg:hidden">
         <nav className="mx-auto grid w-full max-w-3xl grid-cols-4 gap-2">
           {primaryMobileItems.map((item) => (
             <NavLink

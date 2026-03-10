@@ -203,7 +203,7 @@ export function AccountsPage() {
             value={openingBalance}
             onChange={setOpeningBalance}
           />
-          <div className="flex items-end gap-2">
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
             <Button type="submit" className="w-full" disabled={!name}>
               {editingId ? 'Zapisz konto' : 'Dodaj konto'}
             </Button>
