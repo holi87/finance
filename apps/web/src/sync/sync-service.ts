@@ -17,6 +17,7 @@ import {
   listPendingOperations,
   markOperationsApplied,
   markOperationsRejected,
+  recalculateWorkspaceAccountBalances,
   replaceWorkspaceSnapshot,
   setSyncState,
   workspaceHasSnapshot,
@@ -98,6 +99,8 @@ export async function syncWorkspace(
   for (const change of sortChanges(pullResponse.changes)) {
     await applyRemoteChange(change as never);
   }
+
+  await recalculateWorkspaceAccountBalances(workspaceId);
 
   const nextState = applyPullResult(await getSyncState(workspaceId), pullResponse);
   const remaining = await listPendingOperations(workspaceId);

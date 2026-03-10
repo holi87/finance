@@ -276,7 +276,9 @@ export async function applyRemoteChange(change: {
     case 'account': {
       const account = normalizeAccount(change.payload);
       await db.accounts.put(account);
-      await recalculateLocalAccountBalances(account.workspaceId, [account.id]);
+      await recalculateWorkspaceAccountBalances(account.workspaceId, [
+        account.id,
+      ]);
       break;
     }
     case 'category':
@@ -286,7 +288,7 @@ export async function applyRemoteChange(change: {
       const transaction = normalizeTransaction(change.payload);
       const previous = await db.transactions.get(transaction.id);
       await db.transactions.put(transaction);
-      await recalculateLocalAccountBalances(transaction.workspaceId, [
+      await recalculateWorkspaceAccountBalances(transaction.workspaceId, [
         previous?.accountId,
         transaction.accountId,
       ]);
@@ -645,7 +647,7 @@ function reconcileWorkspaceAccounts(
   return accounts.map((account) => reconcileAccountBalance(account, transactions));
 }
 
-async function recalculateLocalAccountBalances(
+export async function recalculateWorkspaceAccountBalances(
   workspaceId: string,
   accountIds?: Array<string | undefined>,
 ) {
