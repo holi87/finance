@@ -1,4 +1,4 @@
-import type { SyncState } from '@finance/shared-types';
+import type { SyncState, WorkspaceSummary } from '@finance/shared-types';
 import { Button, Card, SyncBadge, WorkspaceSwitcher } from '@finance/ui';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
@@ -20,6 +20,17 @@ const navigation = [
 ];
 
 const mobilePrimaryNavigation = ['/', '/transactions', '/budgets'];
+const workspaceTypeLabels: Record<WorkspaceSummary['type'], string> = {
+  personal: 'Dom',
+  business: 'JDG',
+  company: 'Firma',
+  shared: 'Wspólny',
+};
+const workspaceRoleLabels: Record<WorkspaceSummary['role'], string> = {
+  owner: 'Właściciel',
+  editor: 'Edytor',
+  viewer: 'Podgląd',
+};
 
 export function AppLayout() {
   const { user } = useAuth();
@@ -77,7 +88,7 @@ export function AppLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-app-radial px-4 pb-28 pt-6 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-app-radial px-4 pb-36 pt-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 lg:flex-row">
         <aside className="hidden w-72 shrink-0 lg:block">
           <Card className="sticky top-6 space-y-6">
@@ -159,6 +170,50 @@ export function AppLayout() {
                     stan połączenia i outboxa.
                   </p>
                 </div>
+
+                <div className="space-y-3 lg:hidden">
+                  <WorkspaceSwitcher
+                    label="Przełącz dashboard"
+                    value={activeWorkspaceId ?? ''}
+                    onChange={setActiveWorkspaceId}
+                    options={workspaces.map((workspace) => ({
+                      label: workspace.name,
+                      value: workspace.id,
+                      note: workspaceRoleLabels[workspace.role],
+                    }))}
+                  />
+
+                  <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+                    {workspaces.map((workspace) => {
+                      const isActive = workspace.id === activeWorkspaceId;
+
+                      return (
+                        <button
+                          key={workspace.id}
+                          type="button"
+                          onClick={() => setActiveWorkspaceId(workspace.id)}
+                          className={`shrink-0 snap-start rounded-2xl border px-4 py-3 text-left transition ${
+                            isActive
+                              ? 'border-lime-300 bg-lime-300 text-stone-950'
+                              : 'border-white/10 bg-white/5 text-stone-200'
+                          }`}
+                        >
+                          <div className="text-sm font-semibold">
+                            {workspace.name}
+                          </div>
+                          <div
+                            className={`mt-1 text-xs ${
+                              isActive ? 'text-stone-800' : 'text-stone-400'
+                            }`}
+                          >
+                            {workspaceTypeLabels[workspace.type]} ·{' '}
+                            {workspace.baseCurrency}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               <div className="flex flex-col items-start gap-3 md:items-end">
@@ -184,7 +239,7 @@ export function AppLayout() {
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
-            className="absolute bottom-24 left-1/2 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-[28px] border border-white/10 bg-stone-950/95 p-4 shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur"
+            className="absolute bottom-[calc(env(safe-area-inset-bottom)+6rem)] left-1/2 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-[28px] border border-white/10 bg-stone-950/95 p-4 shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -222,35 +277,37 @@ export function AppLayout() {
         </div>
       ) : null}
 
-      <nav className="fixed bottom-4 left-1/2 z-20 flex w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 gap-2 rounded-[26px] border border-white/10 bg-stone-950/90 p-3 backdrop-blur lg:hidden">
-        {primaryMobileItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={() => setMobileMenuOpen(false)}
-            className={({ isActive }) =>
-              `flex-1 rounded-2xl px-3 py-3 text-center text-xs font-semibold transition ${
-                isActive
-                  ? 'bg-lime-300 text-stone-950'
-                  : 'bg-transparent text-stone-300'
-              }`
-            }
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-stone-950/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
+        <nav className="mx-auto grid w-full max-w-3xl grid-cols-4 gap-2">
+          {primaryMobileItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={() => setMobileMenuOpen(false)}
+              className={({ isActive }) =>
+                `flex min-h-[3.5rem] items-center justify-center rounded-2xl px-3 py-3 text-center text-xs font-semibold transition ${
+                  isActive
+                    ? 'bg-lime-300 text-stone-950'
+                    : 'bg-white/5 text-stone-300'
+                }`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((current) => !current)}
+            className={`min-h-[3.5rem] rounded-2xl px-3 py-3 text-center text-xs font-semibold transition ${
+              moreIsActive || mobileMenuOpen
+                ? 'bg-lime-300 text-stone-950'
+                : 'bg-white/5 text-stone-300'
+            }`}
           >
-            {item.label}
-          </NavLink>
-        ))}
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen((current) => !current)}
-          className={`flex-1 rounded-2xl px-3 py-3 text-center text-xs font-semibold transition ${
-            moreIsActive || mobileMenuOpen
-              ? 'bg-lime-300 text-stone-950'
-              : 'bg-transparent text-stone-300'
-          }`}
-        >
-          Więcej
-        </button>
-      </nav>
+            Więcej
+          </button>
+        </nav>
+      </div>
     </div>
   );
 }
