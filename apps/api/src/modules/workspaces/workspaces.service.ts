@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  AdminWorkspaceSummary,
   AddMemberRequest,
   CreateWorkspaceRequest,
   UpdateMemberRequest,
@@ -13,6 +15,7 @@ import type {
 import { AuditService } from '../audit/audit.service';
 import { ChangeLogService } from '../../database/change-log.service';
 import {
+  mapAdminWorkspaceSummary,
   mapMembership,
   mapWorkspaceDetail,
   mapWorkspaceSummary,
@@ -46,6 +49,32 @@ export class WorkspacesService {
     return memberships.map((membership) =>
       mapWorkspaceSummary(membership.workspace, membership.role),
     );
+  }
+
+  async listAllForAdmin(userId: string): Promise<AdminWorkspaceSummary[]> {
+    await this.assertSystemAdmin(userId);
+
+    const workspaces = await this.prisma.workspace.findMany({
+      include: {
+        owner: {
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        },
+        _count: {
+          select: {
+            memberships: true,
+            accounts: true,
+            transactions: true,
+          },
+        },
+      },
+      orderBy: [{ archivedAt: 'asc' }, { updatedAt: 'desc' }, { name: 'asc' }],
+    });
+
+    return workspaces.map(mapAdminWorkspaceSummary);
   }
 
   async create(userId: string, input: CreateWorkspaceRequest) {
@@ -88,10 +117,7 @@ export class WorkspacesService {
   }
 
   async getDetail(userId: string, workspaceId: string) {
-    const membership = await this.workspaceAccessService.assertMembership(
-      userId,
-      workspaceId,
-    );
+    const role = await this.resolveWorkspaceRole(userId, workspaceId);
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
     });
@@ -103,7 +129,7 @@ export class WorkspacesService {
       });
     }
 
-    return mapWorkspaceDetail(workspace, membership.role);
+    return mapWorkspaceDetail(workspace, role);
   }
 
   async update(
@@ -111,11 +137,7 @@ export class WorkspacesService {
     workspaceId: string,
     input: UpdateWorkspaceRequest,
   ) {
-    const membership = await this.workspaceAccessService.assertMembership(
-      userId,
-      workspaceId,
-      'owner',
-    );
+    const role = await this.resolveWorkspaceRole(userId, workspaceId, 'owner');
     const workspace = await this.prisma.workspace.update({
       where: { id: workspaceId },
       data: {
@@ -144,11 +166,46 @@ export class WorkspacesService {
       metadata: input,
     });
 
-    return mapWorkspaceDetail(workspace, membership.role);
+    return mapWorkspaceDetail(workspace, role);
+  }
+
+  async remove(userId: string, workspaceId: string) {
+    await this.resolveWorkspaceRole(userId, workspaceId, 'owner');
+
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+      },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        message: 'Workspace not found',
+      });
+    }
+
+    await this.prisma.workspace.delete({
+      where: { id: workspaceId },
+    });
+
+    await this.auditService.record('workspace.deleted', {
+      userId,
+      metadata: {
+        workspaceId,
+        name: workspace.name,
+        ownerId: workspace.ownerId,
+      },
+    });
+
+    return { success: true, workspaceId };
   }
 
   async listMembers(userId: string, workspaceId: string) {
-    await this.workspaceAccessService.assertMembership(userId, workspaceId);
+    await this.resolveWorkspaceRole(userId, workspaceId);
 
     const memberships = await this.prisma.membership.findMany({
       where: { workspaceId },
@@ -174,11 +231,7 @@ export class WorkspacesService {
     workspaceId: string,
     input: AddMemberRequest,
   ) {
-    await this.workspaceAccessService.assertMembership(
-      userId,
-      workspaceId,
-      'owner',
-    );
+    await this.resolveWorkspaceRole(userId, workspaceId, 'owner');
 
     const user = await this.prisma.user.findUnique({
       where: { id: input.userId },
@@ -233,11 +286,7 @@ export class WorkspacesService {
     membershipId: string,
     input: UpdateMemberRequest,
   ) {
-    await this.workspaceAccessService.assertMembership(
-      userId,
-      workspaceId,
-      'owner',
-    );
+    await this.resolveWorkspaceRole(userId, workspaceId, 'owner');
 
     const membership = await this.prisma.membership.update({
       where: { id: membershipId },
@@ -269,11 +318,7 @@ export class WorkspacesService {
     workspaceId: string,
     membershipId: string,
   ) {
-    await this.workspaceAccessService.assertMembership(
-      userId,
-      workspaceId,
-      'owner',
-    );
+    await this.resolveWorkspaceRole(userId, workspaceId, 'owner');
 
     const membership = await this.prisma.membership.findUnique({
       where: { id: membershipId },
@@ -346,5 +391,55 @@ export class WorkspacesService {
     }
 
     return attempt;
+  }
+
+  private async resolveWorkspaceRole(
+    userId: string,
+    workspaceId: string,
+    requiredRole?: 'owner' | 'editor' | 'viewer',
+  ) {
+    if (await this.isSystemAdmin(userId)) {
+      const workspace = await this.prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { id: true },
+      });
+
+      if (!workspace) {
+        throw new NotFoundException({
+          code: 'WORKSPACE_NOT_FOUND',
+          message: 'Workspace not found',
+        });
+      }
+
+      return 'owner' as const;
+    }
+
+    const membership = await this.workspaceAccessService.assertMembership(
+      userId,
+      workspaceId,
+      requiredRole,
+    );
+
+    return membership.role;
+  }
+
+  private async assertSystemAdmin(userId: string) {
+    if (await this.isSystemAdmin(userId)) {
+      return;
+    }
+
+    throw new ForbiddenException({
+      code: 'ADMIN_REQUIRED',
+      message: 'System admin access is required',
+    });
+  }
+
+  private async isSystemAdmin(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isSystemAdmin: true },
+    });
+
+    return Boolean(user?.isSystemAdmin);
   }
 }

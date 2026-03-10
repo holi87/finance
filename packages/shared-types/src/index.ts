@@ -60,6 +60,23 @@ export interface WorkspaceDetail extends WorkspaceSummary {
   updatedAt: ISODateTimeString;
 }
 
+export interface AdminWorkspaceSummary {
+  id: EntityId;
+  name: string;
+  slug: string;
+  type: WorkspaceType;
+  baseCurrency: CurrencyCode;
+  ownerId: EntityId;
+  ownerDisplayName: string;
+  ownerEmail: string;
+  archivedAt: ISODateTimeString | null;
+  createdAt: ISODateTimeString;
+  updatedAt: ISODateTimeString;
+  memberCount: number;
+  accountCount: number;
+  transactionCount: number;
+}
+
 export interface Membership {
   id: EntityId;
   workspaceId: EntityId;

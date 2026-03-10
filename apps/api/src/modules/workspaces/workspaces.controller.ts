@@ -16,6 +16,7 @@ import {
   updateWorkspaceSchema,
 } from '@finance/shared-validation';
 import type {
+  AdminWorkspaceSummary,
   AddMemberRequest,
   CreateWorkspaceRequest,
   UpdateMemberRequest,
@@ -36,6 +37,11 @@ export class WorkspacesController {
   @Get()
   list(@CurrentUser() user: RequestUser) {
     return this.workspacesService.list(user.id);
+  }
+
+  @Get('admin/all')
+  listAllForAdmin(@CurrentUser() user: RequestUser): Promise<AdminWorkspaceSummary[]> {
+    return this.workspacesService.listAllForAdmin(user.id);
   }
 
   @Post()
@@ -63,6 +69,14 @@ export class WorkspacesController {
     body: UpdateWorkspaceRequest,
   ) {
     return this.workspacesService.update(user.id, workspaceId, body);
+  }
+
+  @Delete(':workspaceId')
+  remove(
+    @CurrentUser() user: RequestUser,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.workspacesService.remove(user.id, workspaceId);
   }
 
   @Get(':workspaceId/members')

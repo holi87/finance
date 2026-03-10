@@ -1,4 +1,5 @@
 import type {
+  AdminWorkspaceSummary,
   Account,
   BudgetLimit,
   BudgetPeriod,
@@ -78,6 +79,34 @@ export function mapWorkspaceDetail(
     archivedAt: toIsoDateTime(workspace.archivedAt),
     createdAt: workspace.createdAt.toISOString(),
     updatedAt: workspace.updatedAt.toISOString(),
+  };
+}
+
+export function mapAdminWorkspaceSummary(
+  workspace: PrismaWorkspace & {
+    owner: Pick<PrismaUser, 'id' | 'email' | 'displayName'>;
+    _count: {
+      memberships: number;
+      accounts: number;
+      transactions: number;
+    };
+  },
+): AdminWorkspaceSummary {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    slug: workspace.slug,
+    type: workspace.type,
+    baseCurrency: workspace.baseCurrency,
+    ownerId: workspace.ownerId,
+    ownerDisplayName: workspace.owner.displayName,
+    ownerEmail: workspace.owner.email,
+    archivedAt: toIsoDateTime(workspace.archivedAt),
+    createdAt: workspace.createdAt.toISOString(),
+    updatedAt: workspace.updatedAt.toISOString(),
+    memberCount: workspace._count.memberships,
+    accountCount: workspace._count.accounts,
+    transactionCount: workspace._count.transactions,
   };
 }
 

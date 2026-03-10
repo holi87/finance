@@ -1,4 +1,5 @@
 import type {
+  AdminWorkspaceSummary,
   Membership,
   User,
   WorkspaceDetail,
@@ -58,8 +59,8 @@ function getErrorMessage(reason: unknown, fallback: string) {
   return reason instanceof Error ? reason.message : fallback;
 }
 
-function resolveWorkspaceSelection(
-  workspaces: WorkspaceSummary[],
+function resolveWorkspaceSelection<T extends { id: string }>(
+  workspaces: T[],
   preferredWorkspaceId?: string | null,
 ) {
   if (
@@ -75,13 +76,18 @@ function resolveWorkspaceSelection(
 export function AdminPage() {
   const { request, user: currentUser, logout } = useAuth();
   const {
-    activeWorkspace,
     activeWorkspaceId,
     setActiveWorkspaceId,
     workspaces,
   } = useWorkspace();
 
   const [users, setUsers] = useState<User[]>([]);
+  const [allWorkspaces, setAllWorkspaces] = useState<AdminWorkspaceSummary[]>(
+    [],
+  );
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
+    activeWorkspaceId ?? null,
+  );
   const [members, setMembers] = useState<Membership[]>([]);
   const [workspaceDetail, setWorkspaceDetail] =
     useState<WorkspaceDetail | null>(null);
@@ -120,15 +126,16 @@ export function AdminPage() {
   const [memberRole, setMemberRole] = useState<Membership['role']>('viewer');
 
   const currentWorkspaceDetail =
-    activeWorkspaceId && workspaceDetail?.id === activeWorkspaceId
+    selectedWorkspaceId && workspaceDetail?.id === selectedWorkspaceId
       ? workspaceDetail
       : null;
   const currentMembers = currentWorkspaceDetail ? members : EMPTY_MEMBERS;
-  const canManageWorkspace = activeWorkspace?.role === 'owner';
+  const canManageWorkspace = Boolean(currentUser?.isSystemAdmin);
   const activeUsersCount = users.filter((entry) => entry.isActive).length;
   const systemAdminsCount = users.filter(
     (entry) => entry.isSystemAdmin && entry.isActive,
   ).length;
+  const adminWorkspaceCount = allWorkspaces.length;
 
   const existingMemberIds = useMemo(
     () => new Set(currentMembers.map((member) => member.userId)),
@@ -159,6 +166,17 @@ export function AdminPage() {
     return nextUsers;
   }, [request]);
 
+  const clearWorkspaceAdminState = useCallback(() => {
+    startTransition(() => {
+      setWorkspaceDetail(null);
+      setMembers([]);
+      setWorkspaceName('');
+      setWorkspaceType('personal');
+      setWorkspaceCurrency('PLN');
+      setWorkspaceArchived('false');
+    });
+  }, []);
+
   const loadWorkspaces = useCallback(
     async (preferredWorkspaceId?: string | null) => {
       const nextWorkspaces = await request<WorkspaceSummary[]>('workspaces');
@@ -179,6 +197,29 @@ export function AdminPage() {
       };
     },
     [activeWorkspaceId, request, setActiveWorkspaceId],
+  );
+
+  const loadAllWorkspaces = useCallback(
+    async (preferredWorkspaceId?: string | null) => {
+      const nextWorkspaces = await request<AdminWorkspaceSummary[]>(
+        'workspaces/admin/all',
+      );
+      const nextSelectedWorkspaceId = resolveWorkspaceSelection(
+        nextWorkspaces,
+        preferredWorkspaceId ?? selectedWorkspaceId ?? activeWorkspaceId,
+      );
+
+      startTransition(() => {
+        setAllWorkspaces(nextWorkspaces);
+        setSelectedWorkspaceId(nextSelectedWorkspaceId);
+      });
+
+      return {
+        nextSelectedWorkspaceId,
+        nextWorkspaces,
+      };
+    },
+    [activeWorkspaceId, request, selectedWorkspaceId],
   );
 
   const loadWorkspaceAdmin = useCallback(
@@ -210,17 +251,29 @@ export function AdminPage() {
       return;
     }
 
-    void loadUsers().catch((reason) => {
-      setError(getErrorMessage(reason, 'Nie udało się pobrać użytkowników'));
-    });
-  }, [currentUser?.isSystemAdmin, loadUsers]);
+    void Promise.all([loadUsers(), loadAllWorkspaces(activeWorkspaceId)]).catch(
+      (reason) => {
+        setError(
+          getErrorMessage(
+            reason,
+            'Nie udało się pobrać danych administracyjnych',
+          ),
+        );
+      },
+    );
+  }, [activeWorkspaceId, currentUser?.isSystemAdmin, loadAllWorkspaces, loadUsers]);
 
   useEffect(() => {
-    if (!currentUser?.isSystemAdmin || !activeWorkspaceId) {
+    if (!currentUser?.isSystemAdmin) {
       return;
     }
 
-    void loadWorkspaceAdmin(activeWorkspaceId).catch((reason) => {
+    if (!selectedWorkspaceId) {
+      clearWorkspaceAdminState();
+      return;
+    }
+
+    void loadWorkspaceAdmin(selectedWorkspaceId).catch((reason) => {
       setError(
         getErrorMessage(
           reason,
@@ -228,7 +281,12 @@ export function AdminPage() {
         ),
       );
     });
-  }, [activeWorkspaceId, currentUser?.isSystemAdmin, loadWorkspaceAdmin]);
+  }, [
+    clearWorkspaceAdminState,
+    currentUser?.isSystemAdmin,
+    loadWorkspaceAdmin,
+    selectedWorkspaceId,
+  ]);
 
   function beginEditUser(nextUser: User) {
     setEditingUserId(nextUser.id);
@@ -299,13 +357,13 @@ export function AdminPage() {
 
         <Card className="space-y-2">
           <p className="text-xs uppercase tracking-[0.25em] text-stone-500">
-            Twoje workspace’y
+            Wszystkie workspace’y
           </p>
           <p className="font-display text-4xl font-bold text-white">
-            {workspaces.length}
+            {adminWorkspaceCount}
           </p>
           <p className="text-sm text-stone-400">
-            Każdy workspace ma własny dashboard i role
+            Lista instalacji z właścicielami i licznikami danych
           </p>
         </Card>
       </div>
@@ -477,16 +535,13 @@ export function AdminPage() {
                               return;
                             }
 
-                            await loadUsers();
-                            const { nextActiveWorkspaceId } =
-                              await loadWorkspaces();
+                    await loadUsers();
+                            await loadWorkspaces();
 
-                            if (nextActiveWorkspaceId) {
-                              await loadWorkspaceAdmin(nextActiveWorkspaceId);
-                            }
+                    await loadAllWorkspaces(selectedWorkspaceId);
 
-                            if (editingUserId === entry.id) {
-                              resetUserEditor();
+                    if (editingUserId === entry.id) {
+                      resetUserEditor();
                             }
 
                             setFeedback('Użytkownik został usunięty');
@@ -608,7 +663,7 @@ export function AdminPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
         <Card className="space-y-5">
           <SectionHeader
             eyebrow="Workspaces"
@@ -634,13 +689,8 @@ export function AdminPage() {
                   setNewWorkspaceType('personal');
                   setNewWorkspaceCurrency('PLN');
 
-                  const { nextActiveWorkspaceId } = await loadWorkspaces(
-                    createdWorkspace.id,
-                  );
-
-                  if (nextActiveWorkspaceId) {
-                    await loadWorkspaceAdmin(nextActiveWorkspaceId);
-                  }
+                  await loadWorkspaces(createdWorkspace.id);
+                  await loadAllWorkspaces(createdWorkspace.id);
 
                   setFeedback('Workspace został utworzony');
                 })
@@ -691,109 +741,207 @@ export function AdminPage() {
 
         <Card className="space-y-5">
           <SectionHeader
-            eyebrow="Active workspace"
-            title={
-              currentWorkspaceDetail
-                ? `Konfiguracja: ${currentWorkspaceDetail.name}`
-                : 'Konfiguracja workspace’u'
-            }
-            description="Edytuj nazwę, typ, walutę i stan archiwizacji bieżącego kontekstu."
-            action={
-              canManageWorkspace ? (
-                <SyncBadge label="Owner access" tone="success" />
-              ) : (
-                <SyncBadge label="Tylko owner może zmieniać" tone="warning" />
-              )
-            }
+            eyebrow="Registry"
+            title="Wszystkie workspace’y"
+            description="Wybierz workspace do edycji, sprawdź właściciela i w razie potrzeby usuń cały kontekst."
+            action={<SyncBadge label={`${adminWorkspaceCount} łącznie`} tone="neutral" />}
           />
 
-          {currentWorkspaceDetail ? (
-            <form
-              className="grid gap-4 md:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!activeWorkspaceId) {
-                  return;
-                }
-
-                clearMessages();
-                void request<WorkspaceDetail>(
-                  `workspaces/${activeWorkspaceId}`,
-                  {
-                    method: 'PATCH',
-                    body: JSON.stringify({
-                      name: workspaceName,
-                      type: workspaceType,
-                      baseCurrency: workspaceCurrency,
-                      archivedAt:
-                        workspaceArchived === 'true'
-                          ? new Date().toISOString()
-                          : null,
-                    }),
-                  },
-                )
-                  .then(async () => {
-                    await loadWorkspaces(activeWorkspaceId);
-                    await loadWorkspaceAdmin(activeWorkspaceId);
-                    setFeedback('Workspace został zaktualizowany');
-                  })
-                  .catch((reason) => {
-                    setError(
-                      getErrorMessage(
-                        reason,
-                        'Nie udało się zaktualizować workspace’u',
-                      ),
-                    );
-                  });
-              }}
-            >
-              <Input
-                label="Nazwa"
-                name="workspaceName"
-                value={workspaceName}
-                onChange={setWorkspaceName}
-              />
-              <Select
-                label="Typ"
-                name="workspaceType"
-                value={workspaceType}
-                onChange={(value: string) =>
-                  setWorkspaceType(value as WorkspaceSummary['type'])
-                }
-                options={workspaceTypeOptions.map((option) => ({ ...option }))}
-              />
-              <Input
-                label="Waluta bazowa"
-                name="workspaceCurrency"
-                value={workspaceCurrency}
-                onChange={setWorkspaceCurrency}
-              />
-              <Select
-                label="Archiwizacja"
-                name="workspaceArchived"
-                value={workspaceArchived}
-                onChange={setWorkspaceArchived}
-                options={archivedOptions.map((option) => ({ ...option }))}
-              />
-              <div className="md:col-span-2">
-                <Button type="submit" disabled={!canManageWorkspace}>
-                  Zapisz workspace
-                </Button>
-              </div>
-            </form>
-          ) : (
+          {allWorkspaces.length === 0 ? (
             <EmptyState
-              title="Brak aktywnego workspace’u"
-              description="Utwórz nowy workspace lub wybierz istniejący z przełącznika po lewej."
+              title="Brak workspace’ów"
+              description="Utwórz pierwszy workspace, aby pojawił się na liście administracyjnej."
             />
+          ) : (
+            <div className="grid gap-3">
+              {allWorkspaces.map((workspace) => {
+                const isSelected = workspace.id === selectedWorkspaceId;
+
+                return (
+                  <div
+                    key={workspace.id}
+                    className={`rounded-[24px] border p-4 ${
+                      isSelected
+                        ? 'border-lime-300 bg-lime-300/10'
+                        : 'border-white/10 bg-white/5'
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-1">
+                        <p className="font-semibold text-white">
+                          {workspace.name}
+                        </p>
+                        <p className="text-sm text-stone-400">
+                          {workspace.ownerDisplayName} · {workspace.ownerEmail}
+                        </p>
+                        <p className="text-xs text-stone-500">
+                          {workspace.type} · {workspace.baseCurrency} · {workspace.memberCount} czł. · {workspace.accountCount} kont · {workspace.transactionCount} trans.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <SyncBadge
+                          label={workspace.archivedAt ? 'Zarchiwizowany' : 'Aktywny'}
+                          tone={workspace.archivedAt ? 'warning' : 'success'}
+                        />
+                        <Button
+                          variant={isSelected ? 'primary' : 'secondary'}
+                          onClick={() => setSelectedWorkspaceId(workspace.id)}
+                        >
+                          {isSelected ? 'Wybrany' : 'Zarządzaj'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                `Usunąć workspace ${workspace.name}? Ta operacja skasuje wszystkie konta, transakcje, budżety i członkostwa.`,
+                              )
+                            ) {
+                              return;
+                            }
+
+                            clearMessages();
+                            void request<{ success: true }>(
+                              `workspaces/${workspace.id}`,
+                              {
+                                method: 'DELETE',
+                              },
+                            )
+                              .then(async () => {
+                                const nextPreferredWorkspaceId =
+                                  selectedWorkspaceId === workspace.id
+                                    ? null
+                                    : selectedWorkspaceId;
+
+                                await loadWorkspaces(
+                                  activeWorkspaceId === workspace.id
+                                    ? null
+                                    : activeWorkspaceId,
+                                );
+                                await loadAllWorkspaces(nextPreferredWorkspaceId);
+                                setFeedback('Workspace został usunięty');
+                              })
+                              .catch((reason) => {
+                                setError(
+                                  getErrorMessage(
+                                    reason,
+                                    'Nie udało się usunąć workspace’u',
+                                  ),
+                                );
+                              });
+                          }}
+                        >
+                          Usuń
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </Card>
       </div>
 
       <Card className="space-y-5">
         <SectionHeader
+          eyebrow="Selected workspace"
+          title={
+            currentWorkspaceDetail
+              ? `Konfiguracja: ${currentWorkspaceDetail.name}`
+              : 'Konfiguracja workspace’u'
+          }
+          description="Edytuj nazwę, typ, walutę i stan archiwizacji wybranego workspace’u."
+          action={<SyncBadge label="System admin access" tone="success" />}
+        />
+
+        {currentWorkspaceDetail ? (
+          <form
+            className="grid gap-4 md:grid-cols-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selectedWorkspaceId) {
+                return;
+              }
+
+              clearMessages();
+              void request<WorkspaceDetail>(`workspaces/${selectedWorkspaceId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  name: workspaceName,
+                  type: workspaceType,
+                  baseCurrency: workspaceCurrency,
+                  archivedAt:
+                    workspaceArchived === 'true'
+                      ? new Date().toISOString()
+                      : null,
+                }),
+              })
+                .then(async () => {
+                  if (workspaces.some((entry) => entry.id === selectedWorkspaceId)) {
+                    await loadWorkspaces(selectedWorkspaceId);
+                  }
+                  await loadAllWorkspaces(selectedWorkspaceId);
+                  await loadWorkspaceAdmin(selectedWorkspaceId);
+                  setFeedback('Workspace został zaktualizowany');
+                })
+                .catch((reason) => {
+                  setError(
+                    getErrorMessage(
+                      reason,
+                      'Nie udało się zaktualizować workspace’u',
+                    ),
+                  );
+                });
+            }}
+          >
+            <Input
+              label="Nazwa"
+              name="workspaceName"
+              value={workspaceName}
+              onChange={setWorkspaceName}
+            />
+            <Select
+              label="Typ"
+              name="workspaceType"
+              value={workspaceType}
+              onChange={(value: string) =>
+                setWorkspaceType(value as WorkspaceSummary['type'])
+              }
+              options={workspaceTypeOptions.map((option) => ({ ...option }))}
+            />
+            <Input
+              label="Waluta bazowa"
+              name="workspaceCurrency"
+              value={workspaceCurrency}
+              onChange={setWorkspaceCurrency}
+            />
+            <Select
+              label="Archiwizacja"
+              name="workspaceArchived"
+              value={workspaceArchived}
+              onChange={setWorkspaceArchived}
+              options={archivedOptions.map((option) => ({ ...option }))}
+            />
+            <div className="md:col-span-2">
+              <Button type="submit" disabled={!canManageWorkspace}>
+                Zapisz workspace
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <EmptyState
+            title="Brak wybranego workspace’u"
+            description="Wybierz wpis z listy administracyjnej, aby edytować jego konfigurację."
+          />
+        )}
+      </Card>
+
+      <Card className="space-y-5">
+        <SectionHeader
           eyebrow="Members"
-          title="Członkowie aktywnego workspace’u"
+          title="Członkowie wybranego workspace’u"
           description="Dodawaj ludzi do domu, JDG i firmowych kontekstów, zmieniaj role oraz usuwaj dostęp."
         />
 
@@ -803,13 +951,13 @@ export function AdminPage() {
               className="grid gap-4 md:grid-cols-[1.4fr_0.8fr_0.6fr]"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (!activeWorkspaceId || !resolvedMemberUserId) {
+                if (!selectedWorkspaceId || !resolvedMemberUserId) {
                   return;
                 }
 
                 clearMessages();
                 void request<Membership>(
-                  `workspaces/${activeWorkspaceId}/members`,
+                  `workspaces/${selectedWorkspaceId}/members`,
                   {
                     method: 'POST',
                     body: JSON.stringify({
@@ -820,7 +968,7 @@ export function AdminPage() {
                 )
                   .then(async () => {
                     setMemberUserId('');
-                    await loadWorkspaceAdmin(activeWorkspaceId);
+                    await loadWorkspaceAdmin(selectedWorkspaceId);
                     setFeedback('Członek został dodany do workspace’u');
                   })
                   .catch((reason) => {
@@ -892,13 +1040,13 @@ export function AdminPage() {
                           member.userId === currentWorkspaceDetail.ownerId
                         }
                         onChange={(value: string) => {
-                          if (!activeWorkspaceId) {
+                          if (!selectedWorkspaceId) {
                             return;
                           }
 
                           clearMessages();
                           void request<Membership>(
-                            `workspaces/${activeWorkspaceId}/members/${member.id}`,
+                            `workspaces/${selectedWorkspaceId}/members/${member.id}`,
                             {
                               method: 'PATCH',
                               body: JSON.stringify({
@@ -907,7 +1055,7 @@ export function AdminPage() {
                             },
                           )
                             .then(async () => {
-                              await loadWorkspaceAdmin(activeWorkspaceId);
+                              await loadWorkspaceAdmin(selectedWorkspaceId);
                               setFeedback('Rola została zmieniona');
                             })
                             .catch((reason) => {
@@ -930,7 +1078,7 @@ export function AdminPage() {
                           member.userId === currentWorkspaceDetail.ownerId
                         }
                         onClick={() => {
-                          if (!activeWorkspaceId) {
+                          if (!selectedWorkspaceId) {
                             return;
                           }
 
@@ -944,13 +1092,13 @@ export function AdminPage() {
 
                           clearMessages();
                           void request<{ success: true }>(
-                            `workspaces/${activeWorkspaceId}/members/${member.id}`,
+                            `workspaces/${selectedWorkspaceId}/members/${member.id}`,
                             {
                               method: 'DELETE',
                             },
                           )
                             .then(async () => {
-                              await loadWorkspaceAdmin(activeWorkspaceId);
+                              await loadWorkspaceAdmin(selectedWorkspaceId);
                               setFeedback('Dostęp użytkownika został usunięty');
                             })
                             .catch((reason) => {
