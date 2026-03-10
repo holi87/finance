@@ -1,0 +1,123 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-budget_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-budget}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_USER:-budget} -d ${POSTGRES_DB:-budget_tracker}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-init:
+    build:
+      context: https://github.com/holi87/finance.git#main
+      dockerfile: infra/docker/api.Dockerfile
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-budget}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-budget_tracker}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      APP_BASE_URL: https://hajs.sh.info.pl
+      API_BASE_URL: https://hajs.sh.info.pl/api/v1
+      CORS_ORIGIN: https://hajs.sh.info.pl
+    command: >
+      sh -ec "
+        ./node_modules/.bin/prisma db push --schema apps/api/prisma/schema.prisma &&
+        ./node_modules/.bin/ts-node --project apps/api/tsconfig.json apps/api/prisma/seed.ts
+      "
+
+  api:
+    build:
+      context: https://github.com/holi87/finance.git#main
+      dockerfile: infra/docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-budget}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-budget_tracker}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      APP_BASE_URL: https://hajs.sh.info.pl
+      API_BASE_URL: https://hajs.sh.info.pl/api/v1
+      CORS_ORIGIN: https://hajs.sh.info.pl
+    expose:
+      - '3001'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - http://localhost:3001/api/v1/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: https://github.com/holi87/finance.git#main
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        VITE_API_BASE_URL: https://hajs.sh.info.pl/api/v1
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    expose:
+      - '80'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - http://localhost/ || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    command: >
+      sh -ec '
+        cat > /etc/caddy/Caddyfile <<EOF
+        hajs.sh.info.pl {
+          encode zstd gzip
+          @api path /api/*
+          reverse_proxy @api api:3001
+          reverse_proxy web:80
+        }
+        EOF
+        caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+      '
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
