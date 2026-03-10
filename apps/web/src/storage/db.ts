@@ -407,6 +407,23 @@ export function createLocalTransaction(
   return record;
 }
 
+export function applyLocalTransactionToAccount(
+  account: Account,
+  transaction: Pick<Transaction, 'type' | 'amount'>,
+) {
+  const amount = Number(transaction.amount);
+  const direction =
+    transaction.type === 'expense' ? -1 : transaction.type === 'income' ? 1 : 0;
+
+  return {
+    ...account,
+    currentBalanceCached: (
+      Number(account.currentBalanceCached) +
+      amount * direction
+    ).toFixed(2),
+  };
+}
+
 export function createLocalBudgetPeriod(
   workspaceId: string,
   values: { startsAt: string; endsAt: string },

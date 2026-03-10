@@ -1,26 +1,61 @@
 import type {
   Account,
   BudgetLimit,
+  BudgetPeriod,
   Category,
   Transaction,
   WorkspaceType,
 } from '@finance/shared-types';
 import type { ReactNode } from 'react';
 
-import { CurrencyAmount, EmptyState, SectionHeader } from '@finance/ui';
+import {
+  Button,
+  CurrencyAmount,
+  EmptyState,
+  SectionHeader,
+  SyncBadge,
+} from '@finance/ui';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
-import { useWorkspace } from '../workspaces/workspace-context';
+import {
+  buildCashflowSeries,
+  filterTransactionsInRange,
+  findRelevantBudgetPeriod,
+  getMonthRange,
+  summarizeTransactions,
+  type CashflowBucket,
+  type TrendGranularity,
+} from '../../services/finance-metrics';
 import { db } from '../../storage/db';
+import { useWorkspace } from '../workspaces/workspace-context';
 
 const EMPTY_ACCOUNTS: Account[] = [];
 const EMPTY_TRANSACTIONS: Transaction[] = [];
 const EMPTY_BUDGET_LIMITS: BudgetLimit[] = [];
+const EMPTY_BUDGET_PERIODS: BudgetPeriod[] = [];
 const EMPTY_CATEGORIES: Category[] = [];
+
+const trendOptions: Array<{
+  label: string;
+  value: TrendGranularity;
+}> = [
+  { label: 'Dzień', value: 'day' },
+  { label: 'Tydzień', value: 'week' },
+  { label: 'Miesiąc', value: 'month' },
+];
+
+const trendBucketCount: Record<TrendGranularity, number> = {
+  day: 7,
+  week: 8,
+  month: 6,
+};
 
 export function DashboardPage() {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const [trendGranularity, setTrendGranularity] =
+    useState<TrendGranularity>('week');
+
   const accounts =
     useLiveQuery(
       () =>
@@ -36,8 +71,7 @@ export function DashboardPage() {
           ? db.transactions
               .where('workspaceId')
               .equals(activeWorkspaceId)
-              .reverse()
-              .sortBy('transactionDate')
+              .toArray()
           : Promise.resolve([] as Transaction[]),
       [activeWorkspaceId],
     ) ?? EMPTY_TRANSACTIONS;
@@ -52,6 +86,17 @@ export function DashboardPage() {
           : Promise.resolve([] as BudgetLimit[]),
       [activeWorkspaceId],
     ) ?? EMPTY_BUDGET_LIMITS;
+  const budgetPeriods =
+    useLiveQuery(
+      () =>
+        activeWorkspaceId
+          ? db.budgetPeriods
+              .where('workspaceId')
+              .equals(activeWorkspaceId)
+              .toArray()
+          : Promise.resolve([] as BudgetPeriod[]),
+      [activeWorkspaceId],
+    ) ?? EMPTY_BUDGET_PERIODS;
   const categories =
     useLiveQuery(
       () =>
@@ -76,6 +121,13 @@ export function DashboardPage() {
     () => budgetLimits.filter((limit) => !limit.deletedAt),
     [budgetLimits],
   );
+  const visibleBudgetPeriods = useMemo(
+    () =>
+      budgetPeriods
+        .slice()
+        .sort((left, right) => right.startsAt.localeCompare(left.startsAt)),
+    [budgetPeriods],
+  );
   const visibleCategories = useMemo(
     () => categories.filter((category) => !category.deletedAt),
     [categories],
@@ -90,40 +142,64 @@ export function DashboardPage() {
     );
   }
 
+  const today = new Date().toISOString().slice(0, 10);
   const currency = activeWorkspace.baseCurrency;
-  const monthPrefix = new Date().toISOString().slice(0, 7);
-  const monthTransactions = visibleTransactions.filter((transaction) =>
-    transaction.transactionDate.startsWith(monthPrefix),
+  const currentMonthRange = getMonthRange(today);
+  const previousMonthRange = getMonthRange(today, -1);
+  const currentMonthTransactions = filterTransactionsInRange(
+    visibleTransactions,
+    currentMonthRange.startsAt,
+    currentMonthRange.endsAt,
   );
-  const income = monthTransactions
-    .filter((transaction) => transaction.type === 'income')
-    .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
-  const expenses = monthTransactions
+  const previousMonthTransactions = filterTransactionsInRange(
+    visibleTransactions,
+    previousMonthRange.startsAt,
+    previousMonthRange.endsAt,
+  );
+  const currentMonthSummary = summarizeTransactions(currentMonthTransactions);
+  const previousMonthSummary = summarizeTransactions(previousMonthTransactions);
+  const activeBudgetPeriod = findRelevantBudgetPeriod(
+    visibleBudgetPeriods,
+    today,
+  );
+  const activeBudgetTransactions = activeBudgetPeriod
+    ? filterTransactionsInRange(
+        visibleTransactions,
+        activeBudgetPeriod.startsAt,
+        activeBudgetPeriod.endsAt,
+      )
+    : currentMonthTransactions;
+  const activeBudgetLimits = activeBudgetPeriod
+    ? visibleBudgetLimits.filter(
+        (limit) => limit.budgetPeriodId === activeBudgetPeriod.id,
+      )
+    : [];
+  const budgetTotal = activeBudgetLimits.reduce(
+    (sum, limit) => sum + Number(limit.amount),
+    0,
+  );
+  const budgetSpent = activeBudgetTransactions
     .filter((transaction) => transaction.type === 'expense')
     .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+  const budgetRemaining = budgetTotal - budgetSpent;
+  const budgetUsage =
+    budgetTotal > 0 ? Math.round((budgetSpent / budgetTotal) * 100) : 0;
   const totalBalance = visibleAccounts.reduce(
     (sum, account) => sum + Number(account.currentBalanceCached),
     0,
   );
-  const cashflow = income - expenses;
-  const budgetTotal = visibleBudgetLimits.reduce(
-    (sum, limit) => sum + Number(limit.amount),
-    0,
-  );
-  const budgetUsage =
-    budgetTotal > 0 ? Math.round((expenses / budgetTotal) * 100) : 0;
   const averageExpense =
-    expenses > 0
-      ? expenses /
+    currentMonthSummary.expenses > 0
+      ? currentMonthSummary.expenses /
         Math.max(
           1,
-          monthTransactions.filter(
+          currentMonthTransactions.filter(
             (transaction) => transaction.type === 'expense',
           ).length,
         )
       : 0;
   const largestExpense =
-    monthTransactions
+    currentMonthTransactions
       .filter((transaction) => transaction.type === 'expense')
       .reduce<Transaction | null>((largest, transaction) => {
         if (!largest || Number(transaction.amount) > Number(largest.amount)) {
@@ -134,7 +210,7 @@ export function DashboardPage() {
       }, null) ?? null;
   const monthlyCategorySpend = visibleCategories
     .map((category) => {
-      const spent = monthTransactions
+      const spent = currentMonthTransactions
         .filter(
           (transaction) =>
             transaction.type === 'expense' &&
@@ -150,18 +226,68 @@ export function DashboardPage() {
     .filter((entry) => entry.spent > 0)
     .sort((left, right) => right.spent - left.spent)
     .slice(0, 4);
+  const budgetBreakdown = activeBudgetLimits
+    .map((limit) => {
+      const category = visibleCategories.find(
+        (entry) => entry.id === limit.categoryId,
+      );
+
+      if (!category) {
+        return null;
+      }
+
+      const spent = activeBudgetTransactions
+        .filter(
+          (transaction) =>
+            transaction.type === 'expense' &&
+            transaction.categoryId === limit.categoryId,
+        )
+        .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+      const total = Number(limit.amount);
+      const remaining = total - spent;
+      const progress = total > 0 ? Math.round((spent / total) * 100) : 0;
+
+      return {
+        limit,
+        category,
+        spent,
+        remaining,
+        progress,
+      };
+    })
+    .filter(
+      (
+        entry,
+      ): entry is {
+        limit: BudgetLimit;
+        category: Category;
+        spent: number;
+        remaining: number;
+        progress: number;
+      } => entry !== null,
+    )
+    .sort((left, right) => right.spent - left.spent)
+    .slice(0, 4);
+  const trendSeries = buildCashflowSeries(
+    visibleTransactions,
+    trendGranularity,
+    trendBucketCount[trendGranularity],
+    today,
+  );
+  const currentMonthNetDelta =
+    currentMonthSummary.net - previousMonthSummary.net;
 
   const lens = buildWorkspaceLens(activeWorkspace.type, {
     currency,
     totalBalance,
-    income,
-    expenses,
-    cashflow,
+    income: currentMonthSummary.income,
+    expenses: currentMonthSummary.expenses,
+    cashflow: currentMonthSummary.net,
     budgetUsage,
-    budgetRemaining: budgetTotal - expenses,
+    budgetRemaining,
     averageExpense,
     largestExpenseAmount: largestExpense ? Number(largestExpense.amount) : 0,
-    transactionCount: monthTransactions.length,
+    transactionCount: currentMonthTransactions.length,
     accountCount: visibleAccounts.length,
   });
 
@@ -171,6 +297,14 @@ export function DashboardPage() {
         eyebrow={lens.eyebrow}
         title={lens.title}
         description={lens.description}
+        action={
+          activeBudgetPeriod ? (
+            <SyncBadge
+              label={`Budżet: ${activeBudgetPeriod.startsAt} → ${activeBudgetPeriod.endsAt}`}
+              tone="neutral"
+            />
+          ) : null
+        }
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -183,31 +317,199 @@ export function DashboardPage() {
         ))}
       </div>
 
+      <section className="rounded-[28px] border border-white/10 bg-stone-950/70 p-5">
+        <SectionHeader
+          eyebrow="Trend"
+          title="Historia cashflow"
+          description="Zobacz ile w kolejnych dniach, tygodniach i miesiącach wpadało oraz wypływało z aktywnego workspace’u."
+          action={
+            <div className="flex flex-wrap gap-2">
+              {trendOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  variant={
+                    trendGranularity === option.value ? 'primary' : 'ghost'
+                  }
+                  onClick={() => setTrendGranularity(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          }
+        />
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <CashflowChart series={trendSeries} currency={currency} />
+
+          <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-1">
+            <MetricCard
+              label={
+                currentMonthSummary.net >= 0
+                  ? 'Miesiąc na plus'
+                  : 'Miesiąc na minus'
+              }
+              value={
+                <CurrencyAmount
+                  value={String(Math.abs(currentMonthSummary.net))}
+                  currency={currency}
+                  className="text-3xl"
+                />
+              }
+            />
+            <MetricCard
+              label={
+                currentMonthNetDelta >= 0
+                  ? 'Zmiana vs poprzedni miesiąc'
+                  : 'Spadek vs poprzedni miesiąc'
+              }
+              value={
+                <CurrencyAmount
+                  value={String(Math.abs(currentMonthNetDelta))}
+                  currency={currency}
+                  className="text-3xl"
+                />
+              }
+            />
+            <MetricCard
+              label="Budżet bieżącego okresu"
+              value={
+                activeBudgetPeriod ? (
+                  <CurrencyAmount
+                    value={String(Math.abs(budgetRemaining))}
+                    currency={currency}
+                    className="text-3xl"
+                  />
+                ) : (
+                  <span className="text-3xl font-bold text-white">Brak</span>
+                )
+              }
+            />
+          </div>
+        </div>
+      </section>
+
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="rounded-[28px] border border-white/10 bg-stone-950/70 p-5">
           <SectionHeader
-            eyebrow="Lens"
-            title={lens.focusTitle}
-            description={lens.focusDescription}
+            eyebrow="Budget"
+            title="Stan budżetu"
+            description={
+              activeBudgetPeriod
+                ? 'Transakcje kosztowe są od razu liczone do aktywnego okresu i pokazują gdzie budżet siada najszybciej.'
+                : 'Dodaj okres i limity kategorii, aby śledzić budżet w czasie rzeczywistym.'
+            }
           />
 
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {lens.highlights.map((highlight) => (
-              <div
-                key={highlight.label}
-                className="rounded-[22px] border border-white/10 bg-white/5 px-4 py-4"
-              >
-                <p className="text-xs uppercase tracking-[0.2em] text-stone-500">
-                  {highlight.label}
-                </p>
-                <div className="mt-3 font-display text-2xl font-bold text-white">
-                  {highlight.value}
-                </div>
+          {activeBudgetPeriod ? (
+            <>
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <BudgetTile
+                  label="Zaplanowano"
+                  value={
+                    <CurrencyAmount
+                      value={String(budgetTotal)}
+                      currency={currency}
+                    />
+                  }
+                />
+                <BudgetTile
+                  label="Wydano"
+                  value={
+                    <CurrencyAmount
+                      value={String(budgetSpent)}
+                      currency={currency}
+                    />
+                  }
+                />
+                <BudgetTile
+                  label={budgetRemaining >= 0 ? 'Pozostało' : 'Ponad limit'}
+                  value={
+                    <CurrencyAmount
+                      value={String(Math.abs(budgetRemaining))}
+                      currency={currency}
+                    />
+                  }
+                />
               </div>
-            ))}
-          </div>
 
-          <div className="mt-6 space-y-3">
+              <div className="mt-6 space-y-3">
+                {budgetBreakdown.length === 0 ? (
+                  <EmptyState
+                    title="Brak limitów w aktywnym okresie"
+                    description="Dodaj limity kategorii w zakładce Budżety, aby transakcje zaczęły konsumować budżet."
+                  />
+                ) : (
+                  budgetBreakdown.map((entry) => (
+                    <div
+                      key={entry.limit.id}
+                      className="rounded-[22px] border border-white/10 bg-white/5 px-4 py-4"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-white">
+                            {entry.category.name}
+                          </p>
+                          <p className="text-sm text-stone-400">
+                            {entry.progress}% wykorzystania
+                          </p>
+                        </div>
+                        <CurrencyAmount
+                          value={String(entry.spent)}
+                          currency={entry.limit.currency}
+                        />
+                      </div>
+                      <div className="mt-4 h-2 rounded-full bg-white/10">
+                        <div
+                          className={`h-2 rounded-full ${
+                            entry.progress > 100
+                              ? 'bg-rose-300'
+                              : entry.progress > 80
+                                ? 'bg-amber-300'
+                                : 'bg-lime-300'
+                          }`}
+                          style={{ width: `${Math.min(entry.progress, 100)}%` }}
+                        />
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-sm text-stone-400">
+                        <span>
+                          Limit:{' '}
+                          <CurrencyAmount
+                            value={entry.limit.amount}
+                            currency={entry.limit.currency}
+                          />
+                        </span>
+                        <span>
+                          {entry.remaining >= 0 ? 'Zostało' : 'Ponad limit'}:{' '}
+                          <CurrencyAmount
+                            value={String(Math.abs(entry.remaining))}
+                            currency={entry.limit.currency}
+                          />
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="mt-5">
+              <EmptyState
+                title="Brak aktywnego okresu budżetowego"
+                description="Dodaj okres w zakładce Budżety. Wtedy wydatki zaczną obciążać konkretny plan."
+              />
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-[28px] border border-white/10 bg-stone-950/70 p-5">
+          <SectionHeader
+            eyebrow="Month"
+            title="Miesiąc w liczbach"
+            description="Najmocniejsze kategorie i ostatnie zapisy z bieżącego miesiąca."
+          />
+
+          <div className="mt-5 space-y-3">
             <p className="text-xs uppercase tracking-[0.3em] text-lime-300">
               Top kategorie miesiąca
             </p>
@@ -239,16 +541,11 @@ export function DashboardPage() {
               ))
             )}
           </div>
-        </section>
 
-        <section className="rounded-[28px] border border-white/10 bg-stone-950/70 p-5">
-          <SectionHeader
-            eyebrow="Recent"
-            title="Ostatnie transakcje"
-            description="Szybki podgląd ostatnich zapisów z lokalnego snapshotu aktywnego workspace’u."
-          />
-
-          <div className="mt-5 space-y-3">
+          <div className="mt-6 space-y-3">
+            <p className="text-xs uppercase tracking-[0.3em] text-lime-300">
+              Ostatnie transakcje
+            </p>
             {visibleTransactions.length === 0 ? (
               <EmptyState
                 title="Brak transakcji"
@@ -260,7 +557,7 @@ export function DashboardPage() {
                 .sort((left, right) =>
                   right.transactionDate.localeCompare(left.transactionDate),
                 )
-                .slice(0, 6)
+                .slice(0, 5)
                 .map((transaction) => (
                   <div
                     key={transaction.id}
@@ -294,7 +591,7 @@ export function DashboardPage() {
         <SectionHeader
           eyebrow="Accounts"
           title="Saldo kont"
-          description="Widok gotówki i kont roboczych dla aktualnego kontekstu operacyjnego."
+          description="Saldo zmienia się lokalnie już po zapisaniu transakcji, bez czekania na synchronizację."
         />
 
         <div className="mt-5 grid gap-3 md:grid-cols-2">
@@ -334,6 +631,119 @@ function MetricCard({ label, value }: { label: string; value: ReactNode }) {
       <p className="text-sm text-stone-400">{label}</p>
       <div className="mt-4 font-display font-bold text-white">{value}</div>
     </article>
+  );
+}
+
+function BudgetTile({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-[22px] border border-white/10 bg-white/5 px-4 py-4">
+      <p className="text-xs uppercase tracking-[0.2em] text-stone-500">
+        {label}
+      </p>
+      <div className="mt-2 font-semibold text-white">{value}</div>
+    </div>
+  );
+}
+
+function CashflowChart({
+  series,
+  currency,
+}: {
+  series: CashflowBucket[];
+  currency: string;
+}) {
+  const highestValue = Math.max(
+    1,
+    ...series.map((bucket) => Math.max(bucket.income, bucket.expenses)),
+  );
+  const hasData = series.some(
+    (bucket) => bucket.income > 0 || bucket.expenses > 0,
+  );
+  const summary = {
+    income: series.reduce((sum, bucket) => sum + bucket.income, 0),
+    expenses: series.reduce((sum, bucket) => sum + bucket.expenses, 0),
+    net: series.reduce((sum, bucket) => sum + bucket.net, 0),
+  };
+
+  if (!hasData) {
+    return (
+      <EmptyState
+        title="Brak historii do wykresu"
+        description="Dodaj kilka transakcji, a pojawi się trend dzienny, tygodniowy i miesięczny."
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <BudgetTile
+          label="Wpływy"
+          value={
+            <CurrencyAmount
+              value={String(summary.income)}
+              currency={currency}
+            />
+          }
+        />
+        <BudgetTile
+          label="Wydatki"
+          value={
+            <CurrencyAmount
+              value={String(summary.expenses)}
+              currency={currency}
+            />
+          }
+        />
+        <BudgetTile
+          label={summary.net >= 0 ? 'Netto +' : 'Netto -'}
+          value={
+            <CurrencyAmount
+              value={String(Math.abs(summary.net))}
+              currency={currency}
+            />
+          }
+        />
+      </div>
+
+      <div
+        className="mt-5 grid gap-2"
+        style={{
+          gridTemplateColumns: `repeat(${series.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {series.map((bucket) => (
+          <div key={bucket.key} className="flex flex-col gap-2">
+            <div className="flex h-40 items-end justify-center gap-2 rounded-[22px] border border-white/10 bg-stone-950/70 px-2 py-3">
+              <div className="flex h-full w-full items-end gap-1">
+                <div
+                  className="w-1/2 rounded-t-2xl bg-lime-300"
+                  style={{
+                    height: `${Math.max((bucket.income / highestValue) * 100, bucket.income > 0 ? 8 : 0)}%`,
+                  }}
+                  title={`Wpływy: ${bucket.income}`}
+                />
+                <div
+                  className="w-1/2 rounded-t-2xl bg-rose-300"
+                  style={{
+                    height: `${Math.max((bucket.expenses / highestValue) * 100, bucket.expenses > 0 ? 8 : 0)}%`,
+                  }}
+                  title={`Wydatki: ${bucket.expenses}`}
+                />
+              </div>
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-stone-400">
+                {bucket.label}
+              </p>
+              <p className="mt-1 text-[11px] text-stone-500">
+                {bucket.rangeLabel}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -389,7 +799,7 @@ function buildWorkspaceLens(
     ),
     budgetRemaining: (
       <CurrencyAmount
-        value={String(Math.max(params.budgetRemaining, 0))}
+        value={String(Math.abs(params.budgetRemaining))}
         currency={params.currency}
         className="text-2xl"
       />
@@ -463,7 +873,7 @@ function buildWorkspaceLens(
       eyebrow: 'Firma',
       title: 'Pulpit finansowy firmy',
       description:
-        'Widok zarządczy pod przychód, koszty i marżę operacyjną w kontekście firmowym.',
+        'Widok zarządczy pod przychód, koszty, budżet i marżę operacyjną w kontekście firmowym.',
       metrics: [
         { label: 'Kapitał roboczy', value: sharedMetrics.balance },
         { label: 'Przychody miesiąca', value: sharedMetrics.income },

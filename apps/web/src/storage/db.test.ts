@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLocalAccount, createLocalTransaction } from './db';
+import {
+  applyLocalTransactionToAccount,
+  createLocalAccount,
+  createLocalTransaction,
+} from './db';
 
 describe('local db helpers', () => {
   it('creates a local account with version 0', () => {
@@ -28,5 +32,21 @@ describe('local db helpers', () => {
     expect(transaction.workspaceId).toBe('ws-1');
     expect(transaction.createdBy).toBe('user-1');
     expect(transaction.version).toBe(0);
+  });
+
+  it('updates local account balance after expense transaction', () => {
+    const account = createLocalAccount('ws-1', {
+      name: 'Konto główne',
+      type: 'bank',
+      currency: 'PLN',
+      openingBalance: '100.00',
+    });
+
+    const nextAccount = applyLocalTransactionToAccount(account, {
+      type: 'expense',
+      amount: '25.50',
+    });
+
+    expect(nextAccount.currentBalanceCached).toBe('74.50');
   });
 });

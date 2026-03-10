@@ -1,6 +1,6 @@
 import { Button, Input, Select, Textarea } from '@finance/ui';
 import type { Account, Category, Transaction } from '@finance/shared-types';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export function TransactionForm({
   accounts,
@@ -24,10 +24,28 @@ export function TransactionForm({
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
-  const [transactionDate, setTransactionDate] = useState(new Date().toISOString().slice(0, 10));
+  const [transactionDate, setTransactionDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
   const [description, setDescription] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const resolvedAccountId =
+    accountId && accounts.some((account) => account.id === accountId)
+      ? accountId
+      : (accounts[0]?.id ?? '');
+  const resolvedCategoryId =
+    categoryId === '' ||
+    categories.some((category) => category.id === categoryId)
+      ? categoryId
+      : (categories[0]?.id ?? '');
+  const selectedAccount = useMemo(
+    () =>
+      accounts.find((account) => account.id === resolvedAccountId) ??
+      accounts[0] ??
+      null,
+    [accounts, resolvedAccountId],
+  );
 
   return (
     <form
@@ -36,11 +54,11 @@ export function TransactionForm({
         event.preventDefault();
         setSubmitting(true);
         void onSubmit({
-          accountId,
-          categoryId: categoryId || null,
+          accountId: resolvedAccountId,
+          categoryId: resolvedCategoryId || null,
           type,
           amount,
-          currency: 'PLN',
+          currency: selectedAccount?.currency ?? 'PLN',
           description,
           notes,
           transactionDate,
@@ -62,31 +80,64 @@ export function TransactionForm({
           { label: 'Przychód', value: 'income' },
         ]}
       />
-      <Input label="Kwota" name="amount" value={amount} onChange={setAmount} placeholder="0.00" />
+      <Input
+        label="Kwota"
+        name="amount"
+        value={amount}
+        onChange={setAmount}
+        placeholder="0.00"
+      />
       <Select
         label="Konto"
         name="account"
-        value={accountId}
+        value={resolvedAccountId}
         onChange={setAccountId}
-        options={accounts.map((account) => ({ label: account.name, value: account.id }))}
+        options={accounts.map((account) => ({
+          label: account.name,
+          value: account.id,
+        }))}
       />
       <Select
         label="Kategoria"
         name="category"
-        value={categoryId}
+        value={resolvedCategoryId}
         onChange={setCategoryId}
         options={[
           { label: 'Bez kategorii', value: '' },
-          ...categories.map((category) => ({ label: category.name, value: category.id })),
+          ...categories.map((category) => ({
+            label: category.name,
+            value: category.id,
+          })),
         ]}
       />
-      <Input label="Data" name="transactionDate" type="date" value={transactionDate} onChange={setTransactionDate} />
-      <Input label="Opis" name="description" value={description} onChange={setDescription} placeholder="Zakupy, faktura, lunch…" />
+      <Input
+        label="Data"
+        name="transactionDate"
+        type="date"
+        value={transactionDate}
+        onChange={setTransactionDate}
+      />
+      <Input
+        label="Opis"
+        name="description"
+        value={description}
+        onChange={setDescription}
+        placeholder="Zakupy, faktura, lunch…"
+      />
       <div className="md:col-span-2">
-        <Textarea label="Notatka" name="notes" value={notes} onChange={setNotes} placeholder="Opcjonalna notatka" />
+        <Textarea
+          label="Notatka"
+          name="notes"
+          value={notes}
+          onChange={setNotes}
+          placeholder="Opcjonalna notatka"
+        />
       </div>
       <div className="md:col-span-2">
-        <Button type="submit" disabled={submitting || !accountId || !amount}>
+        <Button
+          type="submit"
+          disabled={submitting || !resolvedAccountId || !amount}
+        >
           {submitting ? 'Zapisywanie…' : 'Dodaj transakcję'}
         </Button>
       </div>

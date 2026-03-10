@@ -6,6 +6,7 @@ import { useDeferredValue, useState } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { useWorkspace } from '../workspaces/workspace-context';
 import {
+  applyLocalTransactionToAccount,
   enqueueCreateOperation,
   createLocalTransaction,
   db,
@@ -100,12 +101,30 @@ export function TransactionsPage() {
             if (!activeWorkspaceId || !user) {
               return;
             }
+
             const transaction = createLocalTransaction(
               activeWorkspaceId,
               user.id,
               payload,
             );
-            await db.transactions.put(transaction);
+            const targetAccount = visibleAccounts.find(
+              (account) => account.id === transaction.accountId,
+            );
+
+            await db.transaction(
+              'rw',
+              [db.transactions, db.accounts],
+              async () => {
+                await db.transactions.put(transaction);
+
+                if (targetAccount) {
+                  await db.accounts.put(
+                    applyLocalTransactionToAccount(targetAccount, transaction),
+                  );
+                }
+              },
+            );
+
             await enqueueCreateOperation({
               deviceId: getDeviceId(),
               workspaceId: activeWorkspaceId,
