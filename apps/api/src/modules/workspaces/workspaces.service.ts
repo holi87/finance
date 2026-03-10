@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   AddMemberRequest,
   CreateWorkspaceRequest,
@@ -116,6 +120,7 @@ export class WorkspacesService {
       where: { id: workspaceId },
       data: {
         name: input.name,
+        type: input.type,
         baseCurrency: input.baseCurrency,
         archivedAt: input.archivedAt
           ? new Date(input.archivedAt)
@@ -257,6 +262,69 @@ export class WorkspacesService {
     });
 
     return mapMembership(membership);
+  }
+
+  async removeMember(
+    userId: string,
+    workspaceId: string,
+    membershipId: string,
+  ) {
+    await this.workspaceAccessService.assertMembership(
+      userId,
+      workspaceId,
+      'owner',
+    );
+
+    const membership = await this.prisma.membership.findUnique({
+      where: { id: membershipId },
+      include: {
+        workspace: {
+          select: {
+            ownerId: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    if (!membership || membership.workspaceId !== workspaceId) {
+      throw new NotFoundException({
+        code: 'MEMBERSHIP_NOT_FOUND',
+        message: 'Membership not found',
+      });
+    }
+
+    if (membership.userId === membership.workspace.ownerId) {
+      throw new BadRequestException({
+        code: 'CANNOT_REMOVE_OWNER',
+        message: 'Workspace owner membership cannot be removed',
+      });
+    }
+
+    await this.prisma.membership.delete({
+      where: { id: membershipId },
+    });
+
+    await this.auditService.record('workspace.member.removed', {
+      userId,
+      workspaceId,
+      metadata: {
+        membershipId,
+        removedUserId: membership.userId,
+      },
+    });
+
+    return {
+      success: true,
+      membershipId,
+      user: membership.user,
+    };
   }
 
   private async createUniqueSlug(ownerId: string, slugBase: string) {

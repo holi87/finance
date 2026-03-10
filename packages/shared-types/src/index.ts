@@ -18,7 +18,12 @@ export type SyncEntityType =
   | 'budgetPeriod'
   | 'budgetLimit';
 export type SyncOperationType = 'create' | 'update' | 'delete';
-export type SyncOperationStatus = 'pending' | 'processing' | 'applied' | 'failed' | 'conflict';
+export type SyncOperationStatus =
+  | 'pending'
+  | 'processing'
+  | 'applied'
+  | 'failed'
+  | 'conflict';
 
 export interface TimestampedEntity {
   id: EntityId;
@@ -33,6 +38,7 @@ export interface User {
   email: string;
   displayName: string;
   isActive: boolean;
+  isSystemAdmin: boolean;
   createdAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
   lastLoginAt: ISODateTimeString | null;
@@ -146,7 +152,7 @@ export interface LoginRequest {
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
-  user: Pick<User, 'id' | 'email' | 'displayName'>;
+  user: Pick<User, 'id' | 'email' | 'displayName' | 'isSystemAdmin'>;
 }
 
 export interface RefreshRequest {
@@ -158,6 +164,28 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+export interface CreateUserWorkspaceRequest {
+  name: string;
+  type: WorkspaceType;
+  baseCurrency: CurrencyCode;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  displayName: string;
+  password: string;
+  isSystemAdmin?: boolean;
+  workspace?: CreateUserWorkspaceRequest;
+}
+
+export interface UpdateUserRequest {
+  email?: string;
+  displayName?: string;
+  password?: string;
+  isActive?: boolean;
+  isSystemAdmin?: boolean;
+}
+
 export interface CreateWorkspaceRequest {
   name: string;
   type: WorkspaceType;
@@ -166,6 +194,7 @@ export interface CreateWorkspaceRequest {
 
 export interface UpdateWorkspaceRequest {
   name?: string;
+  type?: WorkspaceType;
   baseCurrency?: CurrencyCode;
   archivedAt?: ISODateTimeString | null;
 }
@@ -298,7 +327,12 @@ export interface PushRequest {
   operations: Array<
     Pick<
       SyncOperation,
-      'operationId' | 'entityType' | 'entityId' | 'operationType' | 'baseVersion' | 'payload'
+      | 'operationId'
+      | 'entityType'
+      | 'entityId'
+      | 'operationType'
+      | 'baseVersion'
+      | 'payload'
     >
   >;
 }

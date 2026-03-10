@@ -13,9 +13,20 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(16),
 });
 
-export const workspaceTypeSchema = z.enum(['personal', 'business', 'company', 'shared']);
+export const workspaceTypeSchema = z.enum([
+  'personal',
+  'business',
+  'company',
+  'shared',
+]);
 export const membershipRoleSchema = z.enum(['owner', 'editor', 'viewer']);
-export const accountTypeSchema = z.enum(['cash', 'bank', 'savings', 'credit', 'investment']);
+export const accountTypeSchema = z.enum([
+  'cash',
+  'bank',
+  'savings',
+  'credit',
+  'investment',
+]);
 export const categoryKindSchema = z.enum(['expense', 'income', 'both']);
 export const transactionTypeSchema = z.enum(['expense', 'income', 'transfer']);
 export const periodTypeSchema = z.enum(['monthly']);
@@ -36,7 +47,7 @@ export const createWorkspaceSchema = z.object({
 });
 
 export const updateWorkspaceSchema = createWorkspaceSchema
-  .pick({ name: true, baseCurrency: true })
+  .pick({ name: true, type: true, baseCurrency: true })
   .partial()
   .extend({
     archivedAt: z.iso.datetime().nullable().optional(),
@@ -49,6 +60,28 @@ export const addMemberSchema = z.object({
 
 export const updateMemberSchema = z.object({
   role: membershipRoleSchema,
+});
+
+export const createUserWorkspaceSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  type: workspaceTypeSchema,
+  baseCurrency: currencySchema,
+});
+
+export const createUserSchema = z.object({
+  email: z.email(),
+  displayName: z.string().trim().min(2).max(120),
+  password: z.string().min(8),
+  isSystemAdmin: z.boolean().optional(),
+  workspace: createUserWorkspaceSchema.optional(),
+});
+
+export const updateUserSchema = z.object({
+  email: z.email().optional(),
+  displayName: z.string().trim().min(2).max(120).optional(),
+  password: z.string().min(8).optional(),
+  isActive: z.boolean().optional(),
+  isSystemAdmin: z.boolean().optional(),
 });
 
 export const createAccountSchema = z.object({

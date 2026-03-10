@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -93,6 +94,19 @@ export class WorkspacesController {
       workspaceId,
       membershipId,
       body,
+    );
+  }
+
+  @Delete(':workspaceId/members/:membershipId')
+  removeMember(
+    @CurrentUser() user: RequestUser,
+    @Param('workspaceId') workspaceId: string,
+    @Param('membershipId') membershipId: string,
+  ) {
+    return this.workspacesService.removeMember(
+      user.id,
+      workspaceId,
+      membershipId,
     );
   }
 }

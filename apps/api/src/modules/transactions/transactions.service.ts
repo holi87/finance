@@ -306,17 +306,26 @@ export class TransactionsService {
   }
 
   private async recalculateAccountBalance(accountId: string) {
-    const transactions = await this.prisma.transaction.findMany({
-      where: {
-        accountId,
-        deletedAt: null,
-      },
-      select: {
-        type: true,
-        amount: true,
-      },
-    });
+    const [account, transactions] = await Promise.all([
+      this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: {
+          openingBalance: true,
+        },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          accountId,
+          deletedAt: null,
+        },
+        select: {
+          type: true,
+          amount: true,
+        },
+      }),
+    ]);
 
+    const openingBalance = account?.openingBalance ?? new Prisma.Decimal(0);
     const total = transactions.reduce((sum, transaction) => {
       if (transaction.type === 'expense') {
         return sum.minus(transaction.amount);
@@ -327,7 +336,7 @@ export class TransactionsService {
       }
 
       return sum.plus(transaction.amount);
-    }, new Prisma.Decimal(0));
+    }, openingBalance);
 
     await this.prisma.account.update({
       where: { id: accountId },

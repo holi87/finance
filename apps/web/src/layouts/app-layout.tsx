@@ -14,20 +14,27 @@ const navigation = [
   { to: '/accounts', label: 'Konta' },
   { to: '/categories', label: 'Kategorie' },
   { to: '/budgets', label: 'Budżety' },
+  { to: '/admin', label: 'Admin' },
   { to: '/settings', label: 'Ustawienia' },
 ];
 
 export function AppLayout() {
   const { user } = useAuth();
   const { online, syncing, runSync } = useSync();
-  const { workspaces, activeWorkspaceId, setActiveWorkspaceId, activeWorkspace } = useWorkspace();
-  const syncState = useLiveQuery<SyncState | null>(
-    () =>
-      activeWorkspaceId
-        ? db.syncStates.get(activeWorkspaceId).then((value) => value ?? null)
-        : Promise.resolve(null),
-    [activeWorkspaceId],
-  ) ?? null;
+  const {
+    workspaces,
+    activeWorkspaceId,
+    setActiveWorkspaceId,
+    activeWorkspace,
+  } = useWorkspace();
+  const syncState =
+    useLiveQuery<SyncState | null>(
+      () =>
+        activeWorkspaceId
+          ? db.syncStates.get(activeWorkspaceId).then((value) => value ?? null)
+          : Promise.resolve(null),
+      [activeWorkspaceId],
+    ) ?? null;
 
   const syncTone = !online
     ? 'warning'
@@ -43,6 +50,9 @@ export function AppLayout() {
       : syncState?.pendingOperations
         ? `${syncState.pendingOperations} zmian czeka`
         : 'Wszystko zsynchronizowane';
+  const visibleNavigation = navigation.filter(
+    (item) => item.to !== '/admin' || user?.isSystemAdmin,
+  );
 
   return (
     <div className="min-h-screen bg-app-radial px-4 pb-28 pt-6 sm:px-6 lg:px-8">
@@ -50,11 +60,16 @@ export function AppLayout() {
         <aside className="hidden w-72 shrink-0 lg:block">
           <Card className="sticky top-6 space-y-6">
             <div className="space-y-3">
-              <p className="text-xs uppercase tracking-[0.3em] text-lime-300">Budget Tracker</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-lime-300">
+                Budget Tracker
+              </p>
               <div>
-                <h1 className="font-display text-3xl font-bold text-white">Offline-first control center</h1>
+                <h1 className="font-display text-3xl font-bold text-white">
+                  Offline-first control center
+                </h1>
                 <p className="mt-2 text-sm text-stone-400">
-                  Budżety rodzinne, JDG i firmowe w jednym workspace-driven systemie.
+                  Budżety rodzinne, JDG i firmowe w jednym workspace-driven
+                  systemie.
                 </p>
               </div>
             </div>
@@ -71,13 +86,15 @@ export function AppLayout() {
             />
 
             <div className="space-y-3">
-              {navigation.map((item) => (
+              {visibleNavigation.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) =>
                     `block rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                      isActive ? 'bg-lime-300 text-stone-950' : 'bg-white/5 text-stone-300 hover:bg-white/10'
+                      isActive
+                        ? 'bg-lime-300 text-stone-950'
+                        : 'bg-white/5 text-stone-300 hover:bg-white/10'
                     }`
                   }
                 >
@@ -87,9 +104,18 @@ export function AppLayout() {
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-stone-500">Aktualny operator</p>
-              <p className="mt-2 text-lg font-semibold text-white">{user?.displayName}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-stone-500">
+                Aktualny operator
+              </p>
+              <p className="mt-2 text-lg font-semibold text-white">
+                {user?.displayName}
+              </p>
               <p className="text-sm text-stone-400">{user?.email}</p>
+              {user?.isSystemAdmin ? (
+                <div className="mt-3">
+                  <SyncBadge label="System admin" tone="success" />
+                </div>
+              ) : null}
             </div>
           </Card>
         </aside>
@@ -98,20 +124,27 @@ export function AppLayout() {
           <Card className="overflow-hidden">
             <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
               <div className="space-y-3">
-                <p className="text-xs uppercase tracking-[0.35em] text-lime-300">Active context</p>
+                <p className="text-xs uppercase tracking-[0.35em] text-lime-300">
+                  Active context
+                </p>
                 <div className="space-y-2">
                   <h2 className="font-display text-4xl font-bold tracking-tight text-white">
                     {activeWorkspace?.name ?? 'Wybierz workspace'}
                   </h2>
                   <p className="max-w-2xl text-sm text-stone-400">
-                    Dane są czytane z lokalnej bazy, a sync pokazuje rzeczywisty stan połączenia i outboxa.
+                    Dane są czytane z lokalnej bazy, a sync pokazuje rzeczywisty
+                    stan połączenia i outboxa.
                   </p>
                 </div>
               </div>
 
               <div className="flex flex-col items-start gap-3 md:items-end">
                 <SyncBadge label={syncLabel} tone={syncTone} />
-                <Button variant="secondary" onClick={() => void runSync()} disabled={!activeWorkspaceId}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void runSync()}
+                  disabled={!activeWorkspaceId}
+                >
                   Synchronizuj teraz
                 </Button>
               </div>
@@ -123,13 +156,15 @@ export function AppLayout() {
       </div>
 
       <nav className="fixed bottom-4 left-1/2 z-20 flex w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 gap-2 rounded-[26px] border border-white/10 bg-stone-950/90 p-3 backdrop-blur lg:hidden">
-        {navigation.map((item) => (
+        {visibleNavigation.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
               `flex-1 rounded-2xl px-3 py-3 text-center text-xs font-semibold transition ${
-                isActive ? 'bg-lime-300 text-stone-950' : 'bg-transparent text-stone-300'
+                isActive
+                  ? 'bg-lime-300 text-stone-950'
+                  : 'bg-transparent text-stone-300'
               }`
             }
           >

@@ -66,65 +66,66 @@ enum SyncReceiptStatus {
 }
 
 model User {
-  id               String            @id @default(uuid()) @db.Uuid
-  email            String            @unique
-  passwordHash     String            @map("password_hash")
-  displayName      String            @map("display_name")
-  isActive         Boolean           @default(true) @map("is_active")
-  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
-  lastLoginAt      DateTime?         @map("last_login_at") @db.Timestamptz()
-  ownedWorkspaces  Workspace[]       @relation("WorkspaceOwner")
-  memberships      Membership[]
-  devices          Device[]
-  refreshSessions  RefreshSession[]
-  createdTransactions Transaction[]  @relation("TransactionCreator")
-  syncChanges      SyncChange[]      @relation("SyncChangeAuthor")
-  syncCursors      SyncCursor[]
-  invitedMemberships Membership[]    @relation("MembershipInvitedBy")
-  auditLogs        AuditLog[]
+  id                  String           @id @default(uuid()) @db.Uuid
+  email               String           @unique
+  passwordHash        String           @map("password_hash")
+  displayName         String           @map("display_name")
+  isActive            Boolean          @default(true) @map("is_active")
+  isSystemAdmin       Boolean          @default(false) @map("is_system_admin")
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+  lastLoginAt         DateTime?        @map("last_login_at") @db.Timestamptz()
+  ownedWorkspaces     Workspace[]      @relation("WorkspaceOwner")
+  memberships         Membership[]
+  devices             Device[]
+  refreshSessions     RefreshSession[]
+  createdTransactions Transaction[]    @relation("TransactionCreator")
+  syncChanges         SyncChange[]     @relation("SyncChangeAuthor")
+  syncCursors         SyncCursor[]
+  invitedMemberships  Membership[]     @relation("MembershipInvitedBy")
+  auditLogs           AuditLog[]
 
   @@map("users")
 }
 
 model RefreshSession {
-  id           String   @id @default(uuid()) @db.Uuid
-  userId       String   @map("user_id") @db.Uuid
-  tokenHash    String   @map("token_hash")
-  expiresAt    DateTime @map("expires_at") @db.Timestamptz()
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz()
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz()
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_sessions")
 }
 
 model Device {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @map("user_id") @db.Uuid
-  deviceName  String   @map("device_name")
-  platform    String
-  lastSeenAt  DateTime? @map("last_seen_at") @db.Timestamptz()
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String                 @id @default(uuid()) @db.Uuid
+  userId       String                 @map("user_id") @db.Uuid
+  deviceName   String                 @map("device_name")
+  platform     String
+  lastSeenAt   DateTime?              @map("last_seen_at") @db.Timestamptz()
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime               @updatedAt @map("updated_at") @db.Timestamptz()
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   syncReceipts SyncOperationReceipt[]
-  syncCursors SyncCursor[]
+  syncCursors  SyncCursor[]
 
   @@map("devices")
 }
 
 model Workspace {
-  id            String        @id @default(uuid()) @db.Uuid
+  id            String                 @id @default(uuid()) @db.Uuid
   name          String
   slug          String
   type          WorkspaceType
-  baseCurrency  String        @map("base_currency") @db.VarChar(3)
-  ownerId       String        @map("owner_id") @db.Uuid
-  archivedAt    DateTime?     @map("archived_at") @db.Timestamptz()
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
-  owner         User          @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  baseCurrency  String                 @map("base_currency") @db.VarChar(3)
+  ownerId       String                 @map("owner_id") @db.Uuid
+  archivedAt    DateTime?              @map("archived_at") @db.Timestamptz()
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz()
+  owner         User                   @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   memberships   Membership[]
   accounts      Account[]
   categories    Category[]
@@ -142,35 +143,35 @@ model Workspace {
 }
 
 model Membership {
-  id          String         @id @default(uuid()) @db.Uuid
-  workspaceId String         @map("workspace_id") @db.Uuid
-  userId      String         @map("user_id") @db.Uuid
-  role        MembershipRole
-  invitedBy   String?        @map("invited_by") @db.Uuid
-  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
-  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  invitedByUser User?        @relation("MembershipInvitedBy", fields: [invitedBy], references: [id], onDelete: SetNull)
+  id            String         @id @default(uuid()) @db.Uuid
+  workspaceId   String         @map("workspace_id") @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  role          MembershipRole
+  invitedBy     String?        @map("invited_by") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invitedByUser User?          @relation("MembershipInvitedBy", fields: [invitedBy], references: [id], onDelete: SetNull)
 
   @@unique([workspaceId, userId])
   @@map("memberships")
 }
 
 model Account {
-  id                   String      @id @default(uuid()) @db.Uuid
-  workspaceId          String      @map("workspace_id") @db.Uuid
+  id                   String        @id @default(uuid()) @db.Uuid
+  workspaceId          String        @map("workspace_id") @db.Uuid
   name                 String
   type                 AccountType
-  currency             String      @db.VarChar(3)
-  openingBalance       Decimal     @default(0) @map("opening_balance") @db.Decimal(18, 2)
-  currentBalanceCached Decimal     @default(0) @map("current_balance_cached") @db.Decimal(18, 2)
-  isArchived           Boolean     @default(false) @map("is_archived")
-  version              Int         @default(1)
-  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt            DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
-  deletedAt            DateTime?   @map("deleted_at") @db.Timestamptz()
-  workspace            Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  currency             String        @db.VarChar(3)
+  openingBalance       Decimal       @default(0) @map("opening_balance") @db.Decimal(18, 2)
+  currentBalanceCached Decimal       @default(0) @map("current_balance_cached") @db.Decimal(18, 2)
+  isArchived           Boolean       @default(false) @map("is_archived")
+  version              Int           @default(1)
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt            DateTime?     @map("deleted_at") @db.Timestamptz()
+  workspace            Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   transactions         Transaction[]
 
   @@index([workspaceId, isArchived])
@@ -179,21 +180,21 @@ model Account {
 }
 
 model Category {
-  id               String      @id @default(uuid()) @db.Uuid
-  workspaceId      String      @map("workspace_id") @db.Uuid
-  parentCategoryId String?     @map("parent_category_id") @db.Uuid
+  id               String        @id @default(uuid()) @db.Uuid
+  workspaceId      String        @map("workspace_id") @db.Uuid
+  parentCategoryId String?       @map("parent_category_id") @db.Uuid
   name             String
   kind             CategoryKind
   color            String?
   icon             String?
-  isArchived       Boolean     @default(false) @map("is_archived")
-  version          Int         @default(1)
-  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
-  deletedAt        DateTime?   @map("deleted_at") @db.Timestamptz()
-  workspace        Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  parentCategory   Category?   @relation("CategoryTree", fields: [parentCategoryId], references: [id], onDelete: SetNull)
-  childCategories  Category[]  @relation("CategoryTree")
+  isArchived       Boolean       @default(false) @map("is_archived")
+  version          Int           @default(1)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt        DateTime?     @map("deleted_at") @db.Timestamptz()
+  workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parentCategory   Category?     @relation("CategoryTree", fields: [parentCategoryId], references: [id], onDelete: SetNull)
+  childCategories  Category[]    @relation("CategoryTree")
   transactions     Transaction[]
   budgetLimits     BudgetLimit[]
 
@@ -203,27 +204,27 @@ model Category {
 }
 
 model Transaction {
-  id              String          @id @default(uuid()) @db.Uuid
-  workspaceId     String          @map("workspace_id") @db.Uuid
-  accountId       String          @map("account_id") @db.Uuid
-  categoryId      String?         @map("category_id") @db.Uuid
-  type            TransactionType
-  amount          Decimal         @db.Decimal(18, 2)
-  currency        String          @db.VarChar(3)
-  description     String?
-  notes           String?
-  transactionDate DateTime        @map("transaction_date") @db.Date
-  createdBy       String          @map("created_by") @db.Uuid
-  version         Int             @default(1)
-  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
-  deletedAt       DateTime?       @map("deleted_at") @db.Timestamptz()
-  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  account         Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  category        Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdByUser   User            @relation("TransactionCreator", fields: [createdBy], references: [id], onDelete: Cascade)
-  outboundTransfer TransferLink?  @relation("OutboundTransfer")
-  inboundTransfer  TransferLink?  @relation("InboundTransfer")
+  id               String          @id @default(uuid()) @db.Uuid
+  workspaceId      String          @map("workspace_id") @db.Uuid
+  accountId        String          @map("account_id") @db.Uuid
+  categoryId       String?         @map("category_id") @db.Uuid
+  type             TransactionType
+  amount           Decimal         @db.Decimal(18, 2)
+  currency         String          @db.VarChar(3)
+  description      String?
+  notes            String?
+  transactionDate  DateTime        @map("transaction_date") @db.Date
+  createdBy        String          @map("created_by") @db.Uuid
+  version          Int             @default(1)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz()
+  workspace        Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account          Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category         Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdByUser    User            @relation("TransactionCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  outboundTransfer TransferLink?   @relation("OutboundTransfer")
+  inboundTransfer  TransferLink?   @relation("InboundTransfer")
 
   @@index([workspaceId, transactionDate(sort: Desc)])
   @@index([workspaceId, accountId])
@@ -247,33 +248,33 @@ model TransferLink {
 }
 
 model BudgetPeriod {
-  id          String      @id @default(uuid()) @db.Uuid
-  workspaceId String      @map("workspace_id") @db.Uuid
-  periodType  PeriodType  @map("period_type")
-  startsAt    DateTime    @map("starts_at") @db.Date
-  endsAt      DateTime    @map("ends_at") @db.Date
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id           String        @id @default(uuid()) @db.Uuid
+  workspaceId  String        @map("workspace_id") @db.Uuid
+  periodType   PeriodType    @map("period_type")
+  startsAt     DateTime      @map("starts_at") @db.Date
+  endsAt       DateTime      @map("ends_at") @db.Date
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   budgetLimits BudgetLimit[]
 
   @@map("budget_periods")
 }
 
 model BudgetLimit {
-  id             String      @id @default(uuid()) @db.Uuid
-  workspaceId    String      @map("workspace_id") @db.Uuid
-  budgetPeriodId String      @map("budget_period_id") @db.Uuid
-  categoryId     String      @map("category_id") @db.Uuid
-  amount         Decimal     @db.Decimal(18, 2)
-  currency       String      @db.VarChar(3)
-  version        Int         @default(1)
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
-  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz()
-  workspace      Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id             String       @id @default(uuid()) @db.Uuid
+  workspaceId    String       @map("workspace_id") @db.Uuid
+  budgetPeriodId String       @map("budget_period_id") @db.Uuid
+  categoryId     String       @map("category_id") @db.Uuid
+  amount         Decimal      @db.Decimal(18, 2)
+  currency       String       @db.VarChar(3)
+  version        Int          @default(1)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz()
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   budgetPeriod   BudgetPeriod @relation(fields: [budgetPeriodId], references: [id], onDelete: Cascade)
-  category       Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category       Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, budgetPeriodId, categoryId])
   @@index([workspaceId, budgetPeriodId])
@@ -281,17 +282,17 @@ model BudgetLimit {
 }
 
 model SyncChange {
-  id            BigInt            @id @default(autoincrement())
-  workspaceId   String            @map("workspace_id") @db.Uuid
-  entityType    SyncEntityType    @map("entity_type")
-  entityId      String            @map("entity_id") @db.Uuid
-  operationType SyncOperationType @map("operation_type")
-  entityVersion Int               @map("entity_version")
-  changedBy     String?           @map("changed_by") @db.Uuid
-  changedAt     DateTime          @default(now()) @map("changed_at") @db.Timestamptz()
-  payloadSnapshot Json?           @map("payload_snapshot")
-  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  changedByUser User?             @relation("SyncChangeAuthor", fields: [changedBy], references: [id], onDelete: SetNull)
+  id              BigInt            @id @default(autoincrement())
+  workspaceId     String            @map("workspace_id") @db.Uuid
+  entityType      SyncEntityType    @map("entity_type")
+  entityId        String            @map("entity_id") @db.Uuid
+  operationType   SyncOperationType @map("operation_type")
+  entityVersion   Int               @map("entity_version")
+  changedBy       String?           @map("changed_by") @db.Uuid
+  changedAt       DateTime          @default(now()) @map("changed_at") @db.Timestamptz()
+  payloadSnapshot Json?             @map("payload_snapshot")
+  workspace       Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  changedByUser   User?             @relation("SyncChangeAuthor", fields: [changedBy], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, id])
   @@index([workspaceId, changedAt])
@@ -333,13 +334,13 @@ model SyncCursor {
 }
 
 model AuditLog {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String     @id @default(uuid()) @db.Uuid
   action      String
-  userId      String?   @map("user_id") @db.Uuid
-  workspaceId String?   @map("workspace_id") @db.Uuid
+  userId      String?    @map("user_id") @db.Uuid
+  workspaceId String?    @map("workspace_id") @db.Uuid
   metadata    Json?
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@map("audit_logs")

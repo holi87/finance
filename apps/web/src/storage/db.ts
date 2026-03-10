@@ -8,7 +8,10 @@ import type {
   Transaction,
   WorkspaceSummary,
 } from '@finance/shared-types';
-import { buildIdleSyncState, createPendingOperation } from '@finance/sync-engine';
+import {
+  buildIdleSyncState,
+  createPendingOperation,
+} from '@finance/sync-engine';
 import Dexie, { type Table } from 'dexie';
 
 export class BudgetTrackerDB extends Dexie {
@@ -41,7 +44,16 @@ export const db = new BudgetTrackerDB();
 export async function clearLocalData() {
   await db.transaction(
     'rw',
-    [db.workspaces, db.accounts, db.categories, db.transactions, db.budgetPeriods, db.budgetLimits, db.outbox, db.syncStates],
+    [
+      db.workspaces,
+      db.accounts,
+      db.categories,
+      db.transactions,
+      db.budgetPeriods,
+      db.budgetLimits,
+      db.outbox,
+      db.syncStates,
+    ],
     async () => {
       await Promise.all([
         db.workspaces.clear(),
@@ -58,7 +70,10 @@ export async function clearLocalData() {
 }
 
 export async function replaceWorkspaces(workspaces: WorkspaceSummary[]) {
-  await db.workspaces.bulkPut(workspaces);
+  await db.transaction('rw', db.workspaces, async () => {
+    await db.workspaces.clear();
+    await db.workspaces.bulkPut(workspaces);
+  });
   for (const workspace of workspaces) {
     await ensureSyncState(workspace.id);
   }
@@ -74,13 +89,22 @@ export async function replaceWorkspaceSnapshot(input: {
 }) {
   await db.transaction(
     'rw',
-    [db.accounts, db.categories, db.transactions, db.budgetPeriods, db.budgetLimits],
+    [
+      db.accounts,
+      db.categories,
+      db.transactions,
+      db.budgetPeriods,
+      db.budgetLimits,
+    ],
     async () => {
       await Promise.all([
         db.accounts.where('workspaceId').equals(input.workspaceId).delete(),
         db.categories.where('workspaceId').equals(input.workspaceId).delete(),
         db.transactions.where('workspaceId').equals(input.workspaceId).delete(),
-        db.budgetPeriods.where('workspaceId').equals(input.workspaceId).delete(),
+        db.budgetPeriods
+          .where('workspaceId')
+          .equals(input.workspaceId)
+          .delete(),
         db.budgetLimits.where('workspaceId').equals(input.workspaceId).delete(),
       ]);
 
@@ -96,11 +120,13 @@ export async function replaceWorkspaceSnapshot(input: {
 }
 
 export async function workspaceHasSnapshot(workspaceId: string) {
-  const [accountsCount, categoriesCount, transactionsCount] = await Promise.all([
-    db.accounts.where('workspaceId').equals(workspaceId).count(),
-    db.categories.where('workspaceId').equals(workspaceId).count(),
-    db.transactions.where('workspaceId').equals(workspaceId).count(),
-  ]);
+  const [accountsCount, categoriesCount, transactionsCount] = await Promise.all(
+    [
+      db.accounts.where('workspaceId').equals(workspaceId).count(),
+      db.categories.where('workspaceId').equals(workspaceId).count(),
+      db.transactions.where('workspaceId').equals(workspaceId).count(),
+    ],
+  );
 
   return accountsCount + categoriesCount + transactionsCount > 0;
 }
@@ -112,22 +138,32 @@ export async function ensureSyncState(workspaceId: string) {
   }
 }
 
-export async function setSyncState(workspaceId: string, patch: Partial<SyncState>) {
-  const current = (await db.syncStates.get(workspaceId)) ?? buildIdleSyncState(workspaceId);
+export async function setSyncState(
+  workspaceId: string,
+  patch: Partial<SyncState>,
+) {
+  const current =
+    (await db.syncStates.get(workspaceId)) ?? buildIdleSyncState(workspaceId);
   const next = { ...current, ...patch };
   await db.syncStates.put(next);
   return next;
 }
 
 export async function getSyncState(workspaceId: string) {
-  return (await db.syncStates.get(workspaceId)) ?? buildIdleSyncState(workspaceId);
+  return (
+    (await db.syncStates.get(workspaceId)) ?? buildIdleSyncState(workspaceId)
+  );
 }
 
-export async function enqueueCreateOperation<TPayload extends Record<string, unknown>>(params: {
+export async function enqueueOperation<
+  TPayload extends Record<string, unknown>,
+>(params: {
   deviceId: string;
   workspaceId: string;
   entityType: SyncOperation['entityType'];
   entityId: string;
+  operationType: SyncOperation['operationType'];
+  baseVersion: number;
   payload: TPayload;
 }) {
   const operation = createPendingOperation({
@@ -136,19 +172,38 @@ export async function enqueueCreateOperation<TPayload extends Record<string, unk
     workspaceId: params.workspaceId,
     entityType: params.entityType,
     entityId: params.entityId,
-    operationType: 'create',
-    baseVersion: 0,
+    operationType: params.operationType,
+    baseVersion: params.baseVersion,
     payload: params.payload,
   });
   await db.outbox.put(operation);
   return operation;
 }
 
+export async function enqueueCreateOperation<
+  TPayload extends Record<string, unknown>,
+>(params: {
+  deviceId: string;
+  workspaceId: string;
+  entityType: SyncOperation['entityType'];
+  entityId: string;
+  payload: TPayload;
+}) {
+  return enqueueOperation({
+    ...params,
+    operationType: 'create',
+    baseVersion: 0,
+  });
+}
+
 export async function listPendingOperations(workspaceId: string) {
   return db.outbox
     .where('workspaceId')
     .equals(workspaceId)
-    .filter((operation) => operation.status === 'pending' || operation.status === 'failed')
+    .filter(
+      (operation) =>
+        operation.status === 'pending' || operation.status === 'failed',
+    )
     .sortBy('createdAt');
 }
 
@@ -160,7 +215,12 @@ export async function refreshPendingCount(workspaceId: string) {
 
 export async function markOperationsApplied(
   workspaceId: string,
-  acceptedOperations: Array<{ operationId: string; entityType: SyncOperation['entityType']; entityId: string; newVersion: number }>,
+  acceptedOperations: Array<{
+    operationId: string;
+    entityType: SyncOperation['entityType'];
+    entityId: string;
+    newVersion: number;
+  }>,
 ) {
   await db.transaction(
     'rw',
@@ -168,7 +228,11 @@ export async function markOperationsApplied(
     async () => {
       for (const accepted of acceptedOperations) {
         await db.outbox.delete(accepted.operationId);
-        await applyAcceptedVersion(accepted.entityType, accepted.entityId, accepted.newVersion);
+        await applyAcceptedVersion(
+          accepted.entityType,
+          accepted.entityId,
+          accepted.newVersion,
+        );
       }
     },
   );
@@ -178,7 +242,11 @@ export async function markOperationsApplied(
 
 export async function markOperationsRejected(
   workspaceId: string,
-  rejectedOperations: Array<{ operationId: string; status: SyncOperation['status']; message: string }>,
+  rejectedOperations: Array<{
+    operationId: string;
+    status: SyncOperation['status'];
+    message: string;
+  }>,
 ) {
   for (const rejected of rejectedOperations) {
     const operation = await db.outbox.get(rejected.operationId);
@@ -220,12 +288,15 @@ export async function applyRemoteChange(change: {
   }
 }
 
-export function createLocalAccount(workspaceId: string, values: {
-  name: string;
-  type: Account['type'];
-  currency: string;
-  openingBalance: string;
-}) {
+export function createLocalAccount(
+  workspaceId: string,
+  values: {
+    name: string;
+    type: Account['type'];
+    currency: string;
+    openingBalance: string;
+  },
+) {
   const now = new Date().toISOString();
   const record: Account = {
     id: crypto.randomUUID(),
@@ -244,11 +315,45 @@ export function createLocalAccount(workspaceId: string, values: {
   return record;
 }
 
-export function createLocalCategory(workspaceId: string, values: {
-  name: string;
-  kind: Category['kind'];
-  color?: string;
-}) {
+export function updateLocalAccount(
+  account: Account,
+  values: {
+    name: string;
+    type: Account['type'];
+    currency: string;
+    openingBalance: string;
+    isArchived?: boolean;
+  },
+) {
+  const updatedAt = new Date().toISOString();
+  return {
+    ...account,
+    name: values.name,
+    type: values.type,
+    currency: values.currency,
+    openingBalance: values.openingBalance,
+    isArchived: values.isArchived ?? account.isArchived,
+    updatedAt,
+  };
+}
+
+export function deleteLocalAccount(account: Account) {
+  const updatedAt = new Date().toISOString();
+  return {
+    ...account,
+    deletedAt: updatedAt,
+    updatedAt,
+  };
+}
+
+export function createLocalCategory(
+  workspaceId: string,
+  values: {
+    name: string;
+    kind: Category['kind'];
+    color?: string;
+  },
+) {
   const now = new Date().toISOString();
   const record: Category = {
     id: crypto.randomUUID(),
@@ -302,7 +407,10 @@ export function createLocalTransaction(
   return record;
 }
 
-export function createLocalBudgetPeriod(workspaceId: string, values: { startsAt: string; endsAt: string }) {
+export function createLocalBudgetPeriod(
+  workspaceId: string,
+  values: { startsAt: string; endsAt: string },
+) {
   const now = new Date().toISOString();
   const record: BudgetPeriod = {
     id: crypto.randomUUID(),
@@ -316,12 +424,15 @@ export function createLocalBudgetPeriod(workspaceId: string, values: { startsAt:
   return record;
 }
 
-export function createLocalBudgetLimit(workspaceId: string, values: {
-  budgetPeriodId: string;
-  categoryId: string;
-  amount: string;
-  currency: string;
-}) {
+export function createLocalBudgetLimit(
+  workspaceId: string,
+  values: {
+    budgetPeriodId: string;
+    categoryId: string;
+    amount: string;
+    currency: string;
+  },
+) {
   const now = new Date().toISOString();
   const record: BudgetLimit = {
     id: crypto.randomUUID(),
@@ -400,7 +511,9 @@ function normalizeCategory(payload: Record<string, unknown>): Category {
   return {
     id: String(payload.id),
     workspaceId: String(payload.workspaceId),
-    parentCategoryId: payload.parentCategoryId ? String(payload.parentCategoryId) : null,
+    parentCategoryId: payload.parentCategoryId
+      ? String(payload.parentCategoryId)
+      : null,
     name: String(payload.name),
     kind: payload.kind as Category['kind'],
     color: payload.color ? String(payload.color) : null,

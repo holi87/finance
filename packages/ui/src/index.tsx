@@ -10,16 +10,25 @@ export function Button(
     onClick?: () => void;
   }>,
 ) {
-  const { children, className, type = 'button', variant = 'primary', ...rest } = props;
+  const {
+    children,
+    className,
+    type = 'button',
+    variant = 'primary',
+    ...rest
+  } = props;
 
   return (
     <button
       type={type}
       className={clsx(
         'inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent disabled:cursor-not-allowed disabled:opacity-50',
-        variant === 'primary' && 'bg-lime-300 text-stone-950 hover:bg-lime-200 focus:ring-lime-300',
-        variant === 'secondary' && 'bg-white/10 text-white hover:bg-white/15 focus:ring-white/40',
-        variant === 'ghost' && 'bg-transparent text-stone-300 hover:bg-white/10 focus:ring-white/20',
+        variant === 'primary' &&
+          'bg-lime-300 text-stone-950 hover:bg-lime-200 focus:ring-lime-300',
+        variant === 'secondary' &&
+          'bg-white/10 text-white hover:bg-white/15 focus:ring-white/40',
+        variant === 'ghost' &&
+          'bg-transparent text-stone-300 hover:bg-white/10 focus:ring-white/20',
         className,
       )}
       {...rest}
@@ -29,7 +38,10 @@ export function Button(
   );
 }
 
-export function Card({ children, className }: PropsWithChildren<{ className?: string }>) {
+export function Card({
+  children,
+  className,
+}: PropsWithChildren<{ className?: string }>) {
   return (
     <section
       className={clsx(
@@ -75,10 +87,11 @@ export function Select(
     name: string;
     value: string;
     onChange: (value: string) => void;
+    disabled?: boolean;
     options: Array<{ label: string; value: string }>;
   }>,
 ) {
-  const { label, name, value, onChange, options } = props;
+  const { label, name, value, onChange, options, disabled = false } = props;
 
   return (
     <label className="flex flex-col gap-2 text-sm text-stone-300">
@@ -86,8 +99,9 @@ export function Select(
       <select
         name={name}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="h-12 rounded-2xl border border-white/10 bg-stone-900 px-4 text-white outline-none transition focus:border-lime-300"
+        className="h-12 rounded-2xl border border-white/10 bg-stone-900 px-4 text-white outline-none transition focus:border-lime-300 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {options.map((option: { label: string; value: string }) => (
           <option key={option.value} value={option.value}>
@@ -138,10 +152,16 @@ export function SectionHeader({
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div className="space-y-2">
-        {eyebrow ? <p className="text-xs uppercase tracking-[0.3em] text-lime-300">{eyebrow}</p> : null}
+        {eyebrow ? (
+          <p className="text-xs uppercase tracking-[0.3em] text-lime-300">
+            {eyebrow}
+          </p>
+        ) : null}
         <div className="space-y-1">
           <h2 className="text-2xl font-bold text-white">{title}</h2>
-          {description ? <p className="max-w-2xl text-sm text-stone-400">{description}</p> : null}
+          {description ? (
+            <p className="max-w-2xl text-sm text-stone-400">{description}</p>
+          ) : null}
         </div>
       </div>
       {action}

@@ -72,6 +72,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         displayName: user.displayName,
+        isSystemAdmin: user.isSystemAdmin,
       },
     };
   }
@@ -84,7 +85,12 @@ export class AuthService {
       include: { user: true },
     });
 
-    if (!session || session.revokedAt || session.expiresAt < new Date()) {
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt < new Date() ||
+      !session.user.isActive
+    ) {
       throw new UnauthorizedException({
         code: 'INVALID_REFRESH_TOKEN',
         message: 'Refresh token is no longer valid',

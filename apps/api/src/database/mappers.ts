@@ -47,6 +47,7 @@ export function mapUser(user: PrismaUser): User {
     email: user.email,
     displayName: user.displayName,
     isActive: user.isActive,
+    isSystemAdmin: user.isSystemAdmin,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
     lastLoginAt: toIsoDateTime(user.lastLoginAt),

@@ -291,16 +291,22 @@ export class SyncService {
           version: { increment: 1 },
         },
       });
+      if (payload.openingBalance) {
+        await this.recalculateAccountBalance(account.id);
+      }
+      const currentAccount = await this.prisma.account.findUnique({
+        where: { id: account.id },
+      });
       await this.recordEntityChange(
         workspaceId,
         userId,
         'account',
         'update',
         account.id,
-        account.version,
-        account,
+        currentAccount?.version ?? account.version,
+        currentAccount ?? account,
       );
-      return account;
+      return currentAccount ?? account;
     }
 
     const account = await this.prisma.account.update({
@@ -637,23 +643,32 @@ export class SyncService {
   }
 
   private async recalculateAccountBalance(accountId: string) {
-    const transactions = await this.prisma.transaction.findMany({
-      where: {
-        accountId,
-        deletedAt: null,
-      },
-      select: {
-        type: true,
-        amount: true,
-      },
-    });
+    const [account, transactions] = await Promise.all([
+      this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: {
+          openingBalance: true,
+        },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          accountId,
+          deletedAt: null,
+        },
+        select: {
+          type: true,
+          amount: true,
+        },
+      }),
+    ]);
 
+    const openingBalance = account?.openingBalance ?? new Prisma.Decimal(0);
     const total = transactions.reduce((sum, transaction) => {
       if (transaction.type === 'expense') {
         return sum.minus(transaction.amount);
       }
       return sum.plus(transaction.amount);
-    }, new Prisma.Decimal(0));
+    }, openingBalance);
 
     await this.prisma.account.update({
       where: { id: accountId },

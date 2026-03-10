@@ -5,41 +5,67 @@ import { useDeferredValue, useState } from 'react';
 
 import { useAuth } from '../auth/auth-context';
 import { useWorkspace } from '../workspaces/workspace-context';
-import { enqueueCreateOperation, createLocalTransaction, db, refreshPendingCount } from '../../storage/db';
+import {
+  enqueueCreateOperation,
+  createLocalTransaction,
+  db,
+  refreshPendingCount,
+} from '../../storage/db';
 import { getDeviceId } from '../../services/session-store';
 import { TransactionForm } from './transaction-form';
 
 export function TransactionsPage() {
   const { user } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const accounts = useLiveQuery(
-    () =>
-      activeWorkspaceId
-        ? db.accounts.where('workspaceId').equals(activeWorkspaceId).toArray()
-        : Promise.resolve([] as Account[]),
-    [activeWorkspaceId],
-  ) ?? [];
-  const categories = useLiveQuery(
-    () =>
-      activeWorkspaceId
-        ? db.categories.where('workspaceId').equals(activeWorkspaceId).toArray()
-        : Promise.resolve([] as Category[]),
-    [activeWorkspaceId],
-  ) ?? [];
-  const transactions = useLiveQuery(
-    () =>
-      activeWorkspaceId
-        ? db.transactions.where('workspaceId').equals(activeWorkspaceId).toArray()
-        : Promise.resolve([] as Transaction[]),
-    [activeWorkspaceId],
-  ) ?? [];
+  const accounts =
+    useLiveQuery(
+      () =>
+        activeWorkspaceId
+          ? db.accounts.where('workspaceId').equals(activeWorkspaceId).toArray()
+          : Promise.resolve([] as Account[]),
+      [activeWorkspaceId],
+    ) ?? [];
+  const categories =
+    useLiveQuery(
+      () =>
+        activeWorkspaceId
+          ? db.categories
+              .where('workspaceId')
+              .equals(activeWorkspaceId)
+              .toArray()
+          : Promise.resolve([] as Category[]),
+      [activeWorkspaceId],
+    ) ?? [];
+  const transactions =
+    useLiveQuery(
+      () =>
+        activeWorkspaceId
+          ? db.transactions
+              .where('workspaceId')
+              .equals(activeWorkspaceId)
+              .toArray()
+          : Promise.resolve([] as Transaction[]),
+      [activeWorkspaceId],
+    ) ?? [];
   const [filter, setFilter] = useState<'all' | 'expense' | 'income'>('all');
   const deferredFilter = useDeferredValue(filter);
+  const visibleAccounts = accounts.filter(
+    (account) => !account.deletedAt && !account.isArchived,
+  );
+  const visibleCategories = categories.filter(
+    (category) => !category.deletedAt,
+  );
 
   const visibleTransactions = transactions
-    .filter((transaction) => deferredFilter === 'all' || transaction.type === deferredFilter)
+    .filter((transaction) => !transaction.deletedAt)
+    .filter(
+      (transaction) =>
+        deferredFilter === 'all' || transaction.type === deferredFilter,
+    )
     .slice()
-    .sort((left, right) => right.transactionDate.localeCompare(left.transactionDate));
+    .sort((left, right) =>
+      right.transactionDate.localeCompare(left.transactionDate),
+    );
 
   return (
     <div className="space-y-6">
@@ -55,7 +81,11 @@ export function TransactionsPage() {
                 variant={filter === entry ? 'primary' : 'ghost'}
                 onClick={() => setFilter(entry)}
               >
-                {entry === 'all' ? 'Wszystkie' : entry === 'expense' ? 'Wydatki' : 'Przychody'}
+                {entry === 'all'
+                  ? 'Wszystkie'
+                  : entry === 'expense'
+                    ? 'Wydatki'
+                    : 'Przychody'}
               </Button>
             ))}
           </div>
@@ -64,13 +94,17 @@ export function TransactionsPage() {
 
       <section className="rounded-[28px] border border-white/10 bg-stone-950/70 p-5">
         <TransactionForm
-          accounts={accounts}
-          categories={categories}
+          accounts={visibleAccounts}
+          categories={visibleCategories}
           onSubmit={async (payload) => {
             if (!activeWorkspaceId || !user) {
               return;
             }
-            const transaction = createLocalTransaction(activeWorkspaceId, user.id, payload);
+            const transaction = createLocalTransaction(
+              activeWorkspaceId,
+              user.id,
+              payload,
+            );
             await db.transactions.put(transaction);
             await enqueueCreateOperation({
               deviceId: getDeviceId(),
@@ -98,7 +132,9 @@ export function TransactionsPage() {
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="font-semibold text-white">{transaction.description || 'Bez opisu'}</p>
+                  <p className="font-semibold text-white">
+                    {transaction.description || 'Bez opisu'}
+                  </p>
                   <p className="text-sm text-stone-400">
                     {transaction.transactionDate} · {transaction.type}
                   </p>
@@ -106,7 +142,11 @@ export function TransactionsPage() {
                 <CurrencyAmount
                   value={transaction.amount}
                   currency={transaction.currency}
-                  className={transaction.type === 'expense' ? 'text-rose-300' : 'text-lime-200'}
+                  className={
+                    transaction.type === 'expense'
+                      ? 'text-rose-300'
+                      : 'text-lime-200'
+                  }
                 />
               </div>
             </article>

@@ -8,8 +8,9 @@ Offline-first aplikacja do zarządzania budżetami działająca jako web app i P
 - frontend React + Vite + Tailwind + Dexie + PWA
 - backend NestJS + Prisma + JWT access/refresh
 - workspace isolation z rolami `owner`, `editor`, `viewer`
-- CRUD MVP dla kont, kategorii, transakcji i budżetów
-- dashboard i podstawowe raporty
+- panel administracyjny do zarządzania użytkownikami, rolami i workspace'ami
+- CRUD dla kont, kategorii, transakcji i budżetów, w tym edycja i usuwanie kont
+- osobne dashboardy dla workspace'ów typu dom, JDG, firma i shared
 - local-first zapis na froncie z outboxem i sync `push/pull`
 - Docker, Caddy i GitHub Actions pod lint/typecheck/test/build/docker build
 
@@ -96,6 +97,12 @@ Health: [http://localhost:3001/api/v1/health](http://localhost:3001/api/v1/healt
 - email: `demo@budget.local`
 - hasło: `demo12345`
 
+Po seedzie konto demo jest aktywnym system adminem i dostaje trzy gotowe workspace'y:
+
+- `Domowy`
+- `JDG`
+- `Firma`
+
 ## Docker
 
 Pełny stack:
@@ -133,3 +140,6 @@ Pełna dokumentacja architektury, domeny, syncu, bezpieczeństwa i wdrożenia zn
 - zbudowano monorepo offline-first z aplikacją web/PWA, API NestJS i współdzielonymi pakietami
 - dodano local DB w Dexie, outbox synchronizacji, endpointy `sync/push` i `sync/pull`
 - dodano Docker, Caddy, GitHub Actions i instrukcję uruchomienia projektu
+- dodano systemowy panel administracyjny do tworzenia, edycji, wyłączania i usuwania użytkowników
+- dodano zarządzanie rolami członków workspace'ów oraz edycję typu workspace i archiwizacji
+- rozbudowano demo seed o osobne workspace'y dla domu, JDG i firmy z własnymi dashboardami

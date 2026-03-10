@@ -1,14 +1,26 @@
-import type { LoginRequest, RefreshResponse, WorkspaceSummary } from '@finance/shared-types';
+import type {
+  LoginRequest,
+  RefreshResponse,
+  User,
+  WorkspaceSummary,
+} from '@finance/shared-types';
 import {
   createContext,
   startTransition,
+  useCallback,
   useContext,
   useEffect,
   useState,
   type PropsWithChildren,
 } from 'react';
 
-import { clearActiveWorkspaceId, clearSession, readSession, writeSession, type StoredSession } from '../../services/session-store';
+import {
+  clearActiveWorkspaceId,
+  clearSession,
+  readSession,
+  writeSession,
+  type StoredSession,
+} from '../../services/session-store';
 import { ApiError, fetchJson } from '../../services/http';
 import { clearLocalData, replaceWorkspaces } from '../../storage/db';
 
@@ -27,7 +39,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<StoredSession | null>(null);
 
-  async function refreshWithToken(refreshToken: string) {
+  const refreshWithToken = useCallback(async (refreshToken: string) => {
     const refreshed = await fetchJson<RefreshResponse>('auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
@@ -38,11 +50,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
       throw new ApiError(401, 'No active session');
     }
 
-    const nextSession = { ...current, ...refreshed };
+    const baseSession = { ...current, ...refreshed };
+    const profile = await fetchWithSession<User>('users/me', baseSession);
+    const nextSession = {
+      ...baseSession,
+      user: {
+        id: profile.id,
+        email: profile.email,
+        displayName: profile.displayName,
+        isSystemAdmin: profile.isSystemAdmin,
+      },
+    };
+
     writeSession(nextSession);
-    setSession(nextSession);
+    startTransition(() => {
+      setSession(nextSession);
+    });
+
     return nextSession;
-  }
+  }, []);
 
   useEffect(() => {
     const stored = readSession();
@@ -50,7 +76,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setSession(stored);
       if (navigator.onLine) {
         void refreshWithToken(stored.refreshToken)
-          .then((nextSession) => fetchWithSession<WorkspaceSummary[]>('workspaces', nextSession))
+          .then((nextSession) =>
+            fetchWithSession<WorkspaceSummary[]>('workspaces', nextSession),
+          )
           .then((workspaces) => replaceWorkspaces(workspaces))
           .catch(() => {
             clearSession();
@@ -59,9 +87,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
     }
     setReady(true);
-  }, []);
+  }, [refreshWithToken]);
 
-  async function login(input: LoginRequest) {
+  const login = useCallback(async (input: LoginRequest) => {
     const nextSession = await fetchJson<StoredSession>('auth/login', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -72,11 +100,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setSession(nextSession);
     });
 
-    const workspaces = await fetchWithSession<WorkspaceSummary[]>('workspaces', nextSession);
+    const workspaces = await fetchWithSession<WorkspaceSummary[]>(
+      'workspaces',
+      nextSession,
+    );
     await replaceWorkspaces(workspaces);
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     if (session) {
       try {
         await fetchJson('auth/logout', {
@@ -92,30 +123,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
     clearActiveWorkspaceId();
     await clearLocalData();
     setSession(null);
-  }
+  }, [session]);
 
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    if (!session) {
-      throw new ApiError(401, 'Not authenticated');
-    }
-
-    try {
-      return await fetchWithSession<T>(path, session, init);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        const refreshed = await fetchJson<RefreshResponse>('auth/refresh', {
-          method: 'POST',
-          body: JSON.stringify({ refreshToken: session.refreshToken }),
-        });
-        const nextSession = { ...session, ...refreshed };
-        writeSession(nextSession);
-        setSession(nextSession);
-        return fetchWithSession<T>(path, nextSession, init);
+  const request = useCallback(
+    async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
+      if (!session) {
+        throw new ApiError(401, 'Not authenticated');
       }
 
-      throw error;
-    }
-  }
+      try {
+        return await fetchWithSession<T>(path, session, init);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          const refreshedSession = await refreshWithToken(session.refreshToken);
+          return fetchWithSession<T>(path, refreshedSession, init);
+        }
+
+        throw error;
+      }
+    },
+    [refreshWithToken, session],
+  );
 
   return (
     <AuthContext.Provider
@@ -133,7 +161,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   );
 }
 
-function fetchWithSession<T>(path: string, session: StoredSession, init: RequestInit = {}) {
+function fetchWithSession<T>(
+  path: string,
+  session: StoredSession,
+  init: RequestInit = {},
+) {
   return fetchJson<T>(path, {
     ...init,
     headers: {

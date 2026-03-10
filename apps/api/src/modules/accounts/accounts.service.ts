@@ -106,6 +106,14 @@ export class AccountsService {
       },
     });
 
+    if (input.openingBalance) {
+      await this.recalculateAccountBalance(account.id);
+    }
+
+    const current = await this.prisma.account.findUnique({
+      where: { id: account.id },
+    });
+
     await this.changeLogService.record({
       workspaceId,
       entityType: 'account',
@@ -116,7 +124,7 @@ export class AccountsService {
       payloadSnapshot: account,
     });
 
-    return mapAccount(account);
+    return mapAccount(current ?? account);
   }
 
   async remove(userId: string, workspaceId: string, accountId: string) {
@@ -164,5 +172,42 @@ export class AccountsService {
         message: 'Account not found',
       });
     }
+  }
+
+  private async recalculateAccountBalance(accountId: string) {
+    const [account, transactions] = await Promise.all([
+      this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: {
+          openingBalance: true,
+        },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          accountId,
+          deletedAt: null,
+        },
+        select: {
+          type: true,
+          amount: true,
+        },
+      }),
+    ]);
+
+    const openingBalance = account?.openingBalance ?? new Prisma.Decimal(0);
+    const total = transactions.reduce((sum, transaction) => {
+      if (transaction.type === 'expense') {
+        return sum.minus(transaction.amount);
+      }
+
+      return sum.plus(transaction.amount);
+    }, openingBalance);
+
+    await this.prisma.account.update({
+      where: { id: accountId },
+      data: {
+        currentBalanceCached: total,
+      },
+    });
   }
 }

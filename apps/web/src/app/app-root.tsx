@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { AccountsPage } from '../features/accounts/accounts-page';
+import { AdminPage } from '../features/admin/admin-page';
 import { AuthProvider, useAuth } from '../features/auth/auth-context';
 import { LoginPage } from '../features/auth/login-page';
 import { BudgetsPage } from '../features/budgets/budgets-page';
@@ -30,18 +31,28 @@ function AppRoutes() {
   const { ready, session } = useAuth();
 
   if (!ready) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-stone-400">Loading workspace…</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-stone-400">
+        Loading workspace…
+      </div>
+    );
   }
 
   return (
     <Routes>
-      <Route path="/login" element={session ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route element={session ? <AppLayout /> : <Navigate to="/login" replace />}>
+      <Route
+        path="/login"
+        element={session ? <Navigate to="/" replace /> : <LoginPage />}
+      />
+      <Route
+        element={session ? <AppLayout /> : <Navigate to="/login" replace />}
+      >
         <Route path="/" element={<DashboardPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/budgets" element={<BudgetsPage />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>
