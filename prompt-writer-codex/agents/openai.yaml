@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prompt Writer for Codex"
+  short_description: "Turn plans into coding-agent prompts"
+  default_prompt: "Use $prompt-writer-codex to turn this project plan into a precise implementation prompt for Codex."
