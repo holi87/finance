@@ -35,13 +35,17 @@ export class WorkspacesController {
   constructor(private readonly workspacesService: WorkspacesService) {}
 
   @Get()
-  list(@CurrentUser() user: RequestUser) {
+  list(
+    @CurrentUser()
+    user: RequestUser,
+  ) {
     return this.workspacesService.list(user.id);
   }
 
   @Get('admin/all')
   listAllForAdmin(
-    @CurrentUser() user: RequestUser,
+    @CurrentUser()
+    user: RequestUser,
   ): Promise<AdminWorkspaceSummary[]> {
     return this.workspacesService.listAllForAdmin(user.id);
   }
