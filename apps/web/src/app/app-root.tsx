@@ -7,6 +7,7 @@ import { LoginPage } from '../features/auth/login-page';
 import { BudgetsPage } from '../features/budgets/budgets-page';
 import { CategoriesPage } from '../features/categories/categories-page';
 import { DashboardPage } from '../features/dashboard/dashboard-page';
+import { RemindersPage } from '../features/reminders/reminders-page';
 import { SettingsPage } from '../features/settings/settings-page';
 import { SyncProvider } from '../features/sync/sync-context';
 import { TransactionsPage } from '../features/transactions/transactions-page';
@@ -51,6 +52,7 @@ function AppRoutes() {
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
+        <Route path="/reminders" element={<RemindersPage />} />
         <Route path="/budgets" element={<BudgetsPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/settings" element={<SettingsPage />} />

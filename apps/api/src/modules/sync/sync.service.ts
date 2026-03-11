@@ -4,6 +4,7 @@ import {
   type Account,
   type BudgetLimit,
   type Category,
+  type Reminder,
   type SyncEntityType,
   type SyncOperationType,
   type Transaction,
@@ -13,10 +14,12 @@ import {
   createBudgetLimitSchema,
   createBudgetPeriodSchema,
   createCategorySchema,
+  createReminderSchema,
   createTransactionSchema,
   updateAccountSchema,
   updateBudgetLimitSchema,
   updateCategorySchema,
+  updateReminderSchema,
   updateTransactionSchema,
 } from '@finance/shared-validation';
 import type {
@@ -230,6 +233,8 @@ export class SyncService {
         return this.applyBudgetLimitOperation(userId, workspaceId, operation);
       case 'budgetPeriod':
         return this.applyBudgetPeriodOperation(userId, workspaceId, operation);
+      case 'reminder':
+        return this.applyReminderOperation(userId, workspaceId, operation);
       default:
         throw new Error(
           `Unsupported sync entity type: ${operation.entityType}`,
@@ -642,6 +647,167 @@ export class SyncService {
     return { ...period, version: 1 };
   }
 
+  private async applyReminderOperation(
+    userId: string,
+    workspaceId: string,
+    operation: PushRequest['operations'][number],
+  ) {
+    if (operation.operationType === 'create') {
+      const payload = createReminderSchema.parse(operation.payload);
+      await this.assertReminderDependencies(
+        workspaceId,
+        payload.accountId,
+        payload.categoryId ?? null,
+      );
+      const reminder = await this.prisma.reminder.upsert({
+        where: { id: operation.entityId },
+        update: {},
+        create: {
+          id: operation.entityId,
+          workspaceId,
+          title: payload.title,
+          notes: payload.notes ?? null,
+          amount: new Prisma.Decimal(payload.amount),
+          currency: payload.currency,
+          accountId: payload.accountId,
+          categoryId: payload.categoryId ?? null,
+          scheduleType: payload.scheduleType,
+          dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
+          dueDayOfMonth: payload.dueDayOfMonth ?? null,
+          isActive: true,
+          lastCompletedAt: null,
+        },
+      });
+      await this.recordEntityChange(
+        workspaceId,
+        userId,
+        'reminder',
+        'create',
+        reminder.id,
+        reminder.version,
+        reminder,
+      );
+      return reminder;
+    }
+
+    const current = await this.prisma.reminder.findFirst({
+      where: { id: operation.entityId, workspaceId },
+    });
+    if (!current) {
+      throw new Error('Reminder not found');
+    }
+    if (current.version !== operation.baseVersion) {
+      throw new Error('Reminder version conflict');
+    }
+
+    if (operation.operationType === 'update') {
+      const payload = updateReminderSchema.parse(operation.payload);
+      await this.assertReminderDependencies(
+        workspaceId,
+        payload.accountId === undefined ? current.accountId : payload.accountId,
+        payload.categoryId === undefined
+          ? current.categoryId
+          : payload.categoryId,
+      );
+      const reminder = await this.prisma.reminder.update({
+        where: { id: operation.entityId },
+        data: {
+          title: payload.title,
+          notes: payload.notes,
+          amount: payload.amount
+            ? new Prisma.Decimal(payload.amount)
+            : undefined,
+          currency: payload.currency,
+          accountId: payload.accountId,
+          categoryId: payload.categoryId,
+          scheduleType: payload.scheduleType,
+          dueDate:
+            payload.dueDate === undefined
+              ? undefined
+              : payload.dueDate
+                ? new Date(payload.dueDate)
+                : null,
+          dueDayOfMonth:
+            payload.dueDayOfMonth === undefined
+              ? undefined
+              : payload.dueDayOfMonth,
+          isActive: payload.isActive,
+          lastCompletedAt:
+            payload.lastCompletedAt === undefined
+              ? undefined
+              : payload.lastCompletedAt
+                ? new Date(payload.lastCompletedAt)
+                : null,
+          version: { increment: 1 },
+        },
+      });
+      await this.recordEntityChange(
+        workspaceId,
+        userId,
+        'reminder',
+        'update',
+        reminder.id,
+        reminder.version,
+        reminder,
+      );
+      return reminder;
+    }
+
+    const reminder = await this.prisma.reminder.update({
+      where: { id: operation.entityId },
+      data: {
+        deletedAt: new Date(),
+        version: { increment: 1 },
+      },
+    });
+    await this.recordEntityChange(
+      workspaceId,
+      userId,
+      'reminder',
+      'delete',
+      reminder.id,
+      reminder.version,
+      reminder,
+    );
+    return reminder;
+  }
+
+  private async assertReminderDependencies(
+    workspaceId: string,
+    accountId: string | null,
+    categoryId: string | null,
+  ) {
+    if (accountId) {
+      const account = await this.prisma.account.findFirst({
+        where: {
+          id: accountId,
+          workspaceId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!account) {
+        throw new Error('Reminder account not found');
+      }
+    }
+
+    if (categoryId) {
+      const category = await this.prisma.category.findFirst({
+        where: {
+          id: categoryId,
+          workspaceId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!category) {
+        throw new Error('Reminder category not found');
+      }
+    }
+  }
+
   private async ensureDevice(userId: string, deviceId: string) {
     await this.prisma.device.upsert({
       where: { id: deviceId },
@@ -699,7 +865,7 @@ export class SyncService {
     operationType: SyncOperationType,
     entityId: string,
     version: number,
-    payloadSnapshot: Account | Category | Transaction | BudgetLimit,
+    payloadSnapshot: Account | Category | Transaction | BudgetLimit | Reminder,
   ) {
     await this.changeLogService.record({
       workspaceId,

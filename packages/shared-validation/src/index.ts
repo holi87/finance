@@ -30,6 +30,7 @@ export const accountTypeSchema = z.enum([
 export const categoryKindSchema = z.enum(['expense', 'income', 'both']);
 export const transactionTypeSchema = z.enum(['expense', 'income', 'transfer']);
 export const periodTypeSchema = z.enum(['monthly']);
+export const reminderScheduleTypeSchema = z.enum(['once', 'monthly']);
 export const syncEntityTypeSchema = z.enum([
   'workspace',
   'account',
@@ -37,6 +38,7 @@ export const syncEntityTypeSchema = z.enum([
   'transaction',
   'budgetPeriod',
   'budgetLimit',
+  'reminder',
 ]);
 export const syncOperationTypeSchema = z.enum(['create', 'update', 'delete']);
 
@@ -148,6 +150,71 @@ export const updateBudgetLimitSchema = z.object({
   amount: z.string().regex(moneyRegex).optional(),
   currency: currencySchema.optional(),
 });
+
+export const createReminderSchema = z
+  .object({
+    title: z.string().trim().min(2).max(160),
+    notes: z.string().trim().max(500).optional(),
+    amount: z.string().regex(moneyRegex),
+    currency: currencySchema,
+    accountId: uuidLikeSchema,
+    categoryId: uuidLikeSchema.nullable().optional(),
+    scheduleType: reminderScheduleTypeSchema,
+    dueDate: z.iso.date().nullable().optional(),
+    dueDayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.scheduleType === 'once' && !value.dueDate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dueDate'],
+        message: 'One-time reminder requires dueDate',
+      });
+    }
+
+    if (value.scheduleType === 'monthly' && !value.dueDayOfMonth) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dueDayOfMonth'],
+        message: 'Monthly reminder requires dueDayOfMonth',
+      });
+    }
+  });
+
+export const updateReminderSchema = z
+  .object({
+    title: z.string().trim().min(2).max(160).optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
+    amount: z.string().regex(moneyRegex).optional(),
+    currency: currencySchema.optional(),
+    accountId: uuidLikeSchema.nullable().optional(),
+    categoryId: uuidLikeSchema.nullable().optional(),
+    scheduleType: reminderScheduleTypeSchema.optional(),
+    dueDate: z.iso.date().nullable().optional(),
+    dueDayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+    isActive: z.boolean().optional(),
+    lastCompletedAt: z.iso.date().nullable().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.scheduleType === 'once' && value.dueDate === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dueDate'],
+        message: 'One-time reminder update should provide dueDate',
+      });
+    }
+
+    if (
+      value.scheduleType === 'monthly' &&
+      value.dueDayOfMonth === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dueDayOfMonth'],
+        message: 'Monthly reminder update should provide dueDayOfMonth',
+      });
+    }
+  });
 
 export const pushOperationSchema = z.object({
   operationId: uuidLikeSchema,

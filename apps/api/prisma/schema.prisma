@@ -44,6 +44,11 @@ enum PeriodType {
   monthly
 }
 
+enum ReminderScheduleType {
+  once
+  monthly
+}
+
 enum SyncEntityType {
   workspace
   account
@@ -51,6 +56,7 @@ enum SyncEntityType {
   transaction
   budgetPeriod
   budgetLimit
+  reminder
 }
 
 enum SyncOperationType {
@@ -129,6 +135,7 @@ model Workspace {
   memberships   Membership[]
   accounts      Account[]
   categories    Category[]
+  reminders     Reminder[]
   transactions  Transaction[]
   transferLinks TransferLink[]
   budgetPeriods BudgetPeriod[]
@@ -173,6 +180,7 @@ model Account {
   deletedAt            DateTime?     @map("deleted_at") @db.Timestamptz()
   workspace            Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   transactions         Transaction[]
+  reminders            Reminder[]
 
   @@index([workspaceId, isArchived])
   @@index([workspaceId, deletedAt])
@@ -197,6 +205,7 @@ model Category {
   childCategories  Category[]    @relation("CategoryTree")
   transactions     Transaction[]
   budgetLimits     BudgetLimit[]
+  reminders        Reminder[]
 
   @@index([workspaceId, kind])
   @@index([workspaceId, deletedAt])
@@ -279,6 +288,34 @@ model BudgetLimit {
   @@unique([workspaceId, budgetPeriodId, categoryId])
   @@index([workspaceId, budgetPeriodId])
   @@map("budget_limits")
+}
+
+model Reminder {
+  id              String               @id @default(uuid()) @db.Uuid
+  workspaceId     String               @map("workspace_id") @db.Uuid
+  title           String
+  notes           String?
+  amount          Decimal              @db.Decimal(18, 2)
+  currency        String               @db.VarChar(3)
+  accountId       String?              @map("account_id") @db.Uuid
+  categoryId      String?              @map("category_id") @db.Uuid
+  scheduleType    ReminderScheduleType @map("schedule_type")
+  dueDate         DateTime?            @map("due_date") @db.Date
+  dueDayOfMonth   Int?                 @map("due_day_of_month")
+  isActive        Boolean              @default(true) @map("is_active")
+  lastCompletedAt DateTime?            @map("last_completed_at") @db.Date
+  version         Int                  @default(1)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz()
+  workspace       Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account         Account?             @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  category        Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, isActive])
+  @@index([workspaceId, scheduleType])
+  @@index([workspaceId, deletedAt])
+  @@map("reminders")
 }
 
 model SyncChange {

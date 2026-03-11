@@ -5,6 +5,7 @@ import type {
   BudgetPeriod,
   Category,
   Membership,
+  Reminder,
   Transaction,
   User,
   WorkspaceDetail,
@@ -17,6 +18,7 @@ import type {
   Category as PrismaCategory,
   Membership as PrismaMembership,
   Prisma,
+  Reminder as PrismaReminder,
   Transaction as PrismaTransaction,
   User as PrismaUser,
   Workspace as PrismaWorkspace,
@@ -211,6 +213,30 @@ export function mapBudgetLimit(limit: PrismaBudgetLimit): BudgetLimit {
     createdAt: limit.createdAt.toISOString(),
     updatedAt: limit.updatedAt.toISOString(),
     deletedAt: toIsoDateTime(limit.deletedAt),
+  };
+}
+
+export function mapReminder(reminder: PrismaReminder): Reminder {
+  return {
+    id: reminder.id,
+    workspaceId: reminder.workspaceId,
+    title: reminder.title,
+    notes: reminder.notes,
+    amount: toMoneyString(reminder.amount),
+    currency: reminder.currency,
+    accountId: reminder.accountId,
+    categoryId: reminder.categoryId,
+    scheduleType: reminder.scheduleType,
+    dueDate: reminder.dueDate ? toIsoDate(reminder.dueDate) : null,
+    dueDayOfMonth: reminder.dueDayOfMonth,
+    isActive: reminder.isActive,
+    lastCompletedAt: reminder.lastCompletedAt
+      ? toIsoDate(reminder.lastCompletedAt)
+      : null,
+    version: reminder.version,
+    createdAt: reminder.createdAt.toISOString(),
+    updatedAt: reminder.updatedAt.toISOString(),
+    deletedAt: toIsoDateTime(reminder.deletedAt),
   };
 }
 

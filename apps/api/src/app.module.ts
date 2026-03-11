@@ -9,6 +9,7 @@ import { BudgetsModule } from './modules/budgets/budgets.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { HealthModule } from './modules/health/health.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { RemindersModule } from './modules/reminders/reminders.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { UsersModule } from './modules/users/users.module';
@@ -28,6 +29,7 @@ import { DatabaseModule } from './database/database.module';
     WorkspacesModule,
     AccountsModule,
     CategoriesModule,
+    RemindersModule,
     TransactionsModule,
     BudgetsModule,
     ReportsModule,

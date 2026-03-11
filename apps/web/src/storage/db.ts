@@ -3,6 +3,7 @@ import type {
   BudgetLimit,
   BudgetPeriod,
   Category,
+  Reminder,
   SyncOperation,
   SyncState,
   Transaction,
@@ -18,6 +19,7 @@ export class BudgetTrackerDB extends Dexie {
   workspaces!: Table<WorkspaceSummary, string>;
   accounts!: Table<Account, string>;
   categories!: Table<Category, string>;
+  reminders!: Table<Reminder, string>;
   transactions!: Table<Transaction, string>;
   budgetPeriods!: Table<BudgetPeriod, string>;
   budgetLimits!: Table<BudgetLimit, string>;
@@ -36,6 +38,17 @@ export class BudgetTrackerDB extends Dexie {
       outbox: '&operationId, workspaceId, status, createdAt',
       syncStates: '&workspaceId, status, lastSyncedAt',
     });
+    this.version(2).stores({
+      workspaces: '&id, name, type',
+      accounts: '&id, workspaceId, updatedAt',
+      categories: '&id, workspaceId, updatedAt',
+      reminders: '&id, workspaceId, isActive, updatedAt',
+      transactions: '&id, workspaceId, transactionDate, updatedAt',
+      budgetPeriods: '&id, workspaceId, startsAt',
+      budgetLimits: '&id, workspaceId, budgetPeriodId, updatedAt',
+      outbox: '&operationId, workspaceId, status, createdAt',
+      syncStates: '&workspaceId, status, lastSyncedAt',
+    });
   }
 }
 
@@ -48,6 +61,7 @@ export async function clearLocalData() {
       db.workspaces,
       db.accounts,
       db.categories,
+      db.reminders,
       db.transactions,
       db.budgetPeriods,
       db.budgetLimits,
@@ -59,6 +73,7 @@ export async function clearLocalData() {
         db.workspaces.clear(),
         db.accounts.clear(),
         db.categories.clear(),
+        db.reminders.clear(),
         db.transactions.clear(),
         db.budgetPeriods.clear(),
         db.budgetLimits.clear(),
@@ -83,6 +98,7 @@ export async function replaceWorkspaceSnapshot(input: {
   workspaceId: string;
   accounts: Account[];
   categories: Category[];
+  reminders: Reminder[];
   transactions: Transaction[];
   budgetPeriods: BudgetPeriod[];
   budgetLimits: BudgetLimit[];
@@ -92,6 +108,7 @@ export async function replaceWorkspaceSnapshot(input: {
     [
       db.accounts,
       db.categories,
+      db.reminders,
       db.transactions,
       db.budgetPeriods,
       db.budgetLimits,
@@ -100,6 +117,7 @@ export async function replaceWorkspaceSnapshot(input: {
       await Promise.all([
         db.accounts.where('workspaceId').equals(input.workspaceId).delete(),
         db.categories.where('workspaceId').equals(input.workspaceId).delete(),
+        db.reminders.where('workspaceId').equals(input.workspaceId).delete(),
         db.transactions.where('workspaceId').equals(input.workspaceId).delete(),
         db.budgetPeriods
           .where('workspaceId')
@@ -116,6 +134,7 @@ export async function replaceWorkspaceSnapshot(input: {
       await Promise.all([
         db.accounts.bulkPut(accounts),
         db.categories.bulkPut(input.categories),
+        db.reminders.bulkPut(input.reminders),
         db.transactions.bulkPut(input.transactions),
         db.budgetPeriods.bulkPut(input.budgetPeriods),
         db.budgetLimits.bulkPut(input.budgetLimits),
@@ -125,15 +144,16 @@ export async function replaceWorkspaceSnapshot(input: {
 }
 
 export async function workspaceHasSnapshot(workspaceId: string) {
-  const [accountsCount, categoriesCount, transactionsCount] = await Promise.all(
+  const [accountsCount, categoriesCount, remindersCount, transactionsCount] = await Promise.all(
     [
       db.accounts.where('workspaceId').equals(workspaceId).count(),
       db.categories.where('workspaceId').equals(workspaceId).count(),
+      db.reminders.where('workspaceId').equals(workspaceId).count(),
       db.transactions.where('workspaceId').equals(workspaceId).count(),
     ],
   );
 
-  return accountsCount + categoriesCount + transactionsCount > 0;
+  return accountsCount + categoriesCount + remindersCount + transactionsCount > 0;
 }
 
 export async function ensureSyncState(workspaceId: string) {
@@ -229,7 +249,14 @@ export async function markOperationsApplied(
 ) {
   await db.transaction(
     'rw',
-    [db.outbox, db.accounts, db.categories, db.transactions, db.budgetLimits],
+    [
+      db.outbox,
+      db.accounts,
+      db.categories,
+      db.reminders,
+      db.transactions,
+      db.budgetLimits,
+    ],
     async () => {
       for (const accepted of acceptedOperations) {
         await db.outbox.delete(accepted.operationId);
@@ -283,6 +310,9 @@ export async function applyRemoteChange(change: {
     }
     case 'category':
       await db.categories.put(normalizeCategory(change.payload));
+      break;
+    case 'reminder':
+      await db.reminders.put(normalizeReminder(change.payload));
       break;
     case 'transaction': {
       const transaction = normalizeTransaction(change.payload);
@@ -424,6 +454,89 @@ export function createLocalTransaction(
   return record;
 }
 
+export function createLocalReminder(
+  workspaceId: string,
+  values: {
+    title: string;
+    notes?: string;
+    amount: string;
+    currency: string;
+    accountId: string;
+    categoryId?: string | null;
+    scheduleType: Reminder['scheduleType'];
+    dueDate?: string | null;
+    dueDayOfMonth?: number | null;
+  },
+) {
+  const now = new Date().toISOString();
+  const record: Reminder = {
+    id: crypto.randomUUID(),
+    workspaceId,
+    title: values.title,
+    notes: values.notes ?? null,
+    amount: values.amount,
+    currency: values.currency,
+    accountId: values.accountId,
+    categoryId: values.categoryId ?? null,
+    scheduleType: values.scheduleType,
+    dueDate: values.dueDate ?? null,
+    dueDayOfMonth: values.dueDayOfMonth ?? null,
+    isActive: true,
+    lastCompletedAt: null,
+    version: 0,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  };
+  return record;
+}
+
+export function updateLocalReminder(
+  reminder: Reminder,
+  values: {
+    title: string;
+    notes?: string | null;
+    amount: string;
+    currency: string;
+    accountId: string | null;
+    categoryId?: string | null;
+    scheduleType: Reminder['scheduleType'];
+    dueDate?: string | null;
+    dueDayOfMonth?: number | null;
+    isActive?: boolean;
+    lastCompletedAt?: string | null;
+  },
+) {
+  const updatedAt = new Date().toISOString();
+  return {
+    ...reminder,
+    title: values.title,
+    notes: values.notes ?? null,
+    amount: values.amount,
+    currency: values.currency,
+    accountId: values.accountId,
+    categoryId: values.categoryId ?? null,
+    scheduleType: values.scheduleType,
+    dueDate: values.dueDate ?? null,
+    dueDayOfMonth: values.dueDayOfMonth ?? null,
+    isActive: values.isActive ?? reminder.isActive,
+    lastCompletedAt:
+      values.lastCompletedAt === undefined
+        ? reminder.lastCompletedAt
+        : values.lastCompletedAt,
+    updatedAt,
+  };
+}
+
+export function deleteLocalReminder(reminder: Reminder) {
+  const updatedAt = new Date().toISOString();
+  return {
+    ...reminder,
+    deletedAt: updatedAt,
+    updatedAt,
+  };
+}
+
 export function applyLocalTransactionToAccount(
   account: Account,
   transaction: Pick<Transaction, 'type' | 'amount'>,
@@ -536,6 +649,13 @@ async function applyAcceptedVersion(
       }
       break;
     }
+    case 'reminder': {
+      const reminder = await db.reminders.get(entityId);
+      if (reminder) {
+        await db.reminders.put({ ...reminder, version });
+      }
+      break;
+    }
     case 'transaction': {
       const transaction = await db.transactions.get(entityId);
       if (transaction) {
@@ -637,6 +757,33 @@ function normalizeBudgetPeriod(payload: Record<string, unknown>): BudgetPeriod {
     endsAt: String(payload.endsAt).slice(0, 10),
     createdAt: String(payload.createdAt),
     updatedAt: String(payload.updatedAt),
+  };
+}
+
+function normalizeReminder(payload: Record<string, unknown>): Reminder {
+  return {
+    id: String(payload.id),
+    workspaceId: String(payload.workspaceId),
+    title: String(payload.title),
+    notes: payload.notes ? String(payload.notes) : null,
+    amount: String(payload.amount),
+    currency: String(payload.currency),
+    accountId: payload.accountId ? String(payload.accountId) : null,
+    categoryId: payload.categoryId ? String(payload.categoryId) : null,
+    scheduleType: payload.scheduleType as Reminder['scheduleType'],
+    dueDate: payload.dueDate ? String(payload.dueDate).slice(0, 10) : null,
+    dueDayOfMonth:
+      payload.dueDayOfMonth === null || payload.dueDayOfMonth === undefined
+        ? null
+        : Number(payload.dueDayOfMonth),
+    isActive: Boolean(payload.isActive),
+    lastCompletedAt: payload.lastCompletedAt
+      ? String(payload.lastCompletedAt).slice(0, 10)
+      : null,
+    version: Number(payload.version ?? 1),
+    createdAt: String(payload.createdAt),
+    updatedAt: String(payload.updatedAt),
+    deletedAt: payload.deletedAt ? String(payload.deletedAt) : null,
   };
 }
 

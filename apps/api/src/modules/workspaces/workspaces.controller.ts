@@ -40,7 +40,9 @@ export class WorkspacesController {
   }
 
   @Get('admin/all')
-  listAllForAdmin(@CurrentUser() user: RequestUser): Promise<AdminWorkspaceSummary[]> {
+  listAllForAdmin(
+    @CurrentUser() user: RequestUser,
+  ): Promise<AdminWorkspaceSummary[]> {
     return this.workspacesService.listAllForAdmin(user.id);
   }
 

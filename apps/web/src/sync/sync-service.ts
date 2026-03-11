@@ -5,6 +5,7 @@ import type {
   Category,
   PullResponse,
   PushResponse,
+  Reminder,
   Transaction,
 } from '@finance/shared-types';
 import { applyPullResult, countPendingOperations, sortChanges } from '@finance/sync-engine';
@@ -27,16 +28,27 @@ export async function hydrateWorkspace(
   request: <T>(path: string, init?: RequestInit) => Promise<T>,
   workspaceId: string,
 ) {
-  const [accounts, categories, transactions, budgetPeriods, budgetLimits] = await Promise.all([
+  const [
+    reminders,
+    accounts,
+    categories,
+    transactions,
+    budgetPeriods,
+    budgetLimits,
+  ] = await Promise.all([
+    request<Reminder[]>(`workspaces/${workspaceId}/reminders`),
     request<Account[]>(`workspaces/${workspaceId}/accounts`),
     request<Category[]>(`workspaces/${workspaceId}/categories`),
-    request<{ items: Transaction[] }>(`workspaces/${workspaceId}/transactions?page=1&pageSize=100`),
+    request<{ items: Transaction[] }>(
+      `workspaces/${workspaceId}/transactions?page=1&pageSize=100`,
+    ),
     request<BudgetPeriod[]>(`workspaces/${workspaceId}/budget-periods`),
     request<BudgetLimit[]>(`workspaces/${workspaceId}/budget-limits`),
   ]);
 
   await replaceWorkspaceSnapshot({
     workspaceId,
+    reminders,
     accounts,
     categories,
     transactions: transactions.items,

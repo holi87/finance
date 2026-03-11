@@ -10,13 +10,15 @@ export type AccountType = 'cash' | 'bank' | 'savings' | 'credit' | 'investment';
 export type CategoryKind = 'expense' | 'income' | 'both';
 export type TransactionType = 'expense' | 'income' | 'transfer';
 export type PeriodType = 'monthly';
+export type ReminderScheduleType = 'once' | 'monthly';
 export type SyncEntityType =
   | 'workspace'
   | 'account'
   | 'category'
   | 'transaction'
   | 'budgetPeriod'
-  | 'budgetLimit';
+  | 'budgetLimit'
+  | 'reminder';
 export type SyncOperationType = 'create' | 'update' | 'delete';
 export type SyncOperationStatus =
   | 'pending'
@@ -145,6 +147,21 @@ export interface BudgetLimit extends TimestampedEntity {
   categoryId: EntityId;
   amount: MoneyString;
   currency: CurrencyCode;
+}
+
+export interface Reminder extends TimestampedEntity {
+  workspaceId: EntityId;
+  title: string;
+  notes: string | null;
+  amount: MoneyString;
+  currency: CurrencyCode;
+  accountId: EntityId | null;
+  categoryId: EntityId | null;
+  scheduleType: ReminderScheduleType;
+  dueDate: ISODateString | null;
+  dueDayOfMonth: number | null;
+  isActive: boolean;
+  lastCompletedAt: ISODateString | null;
 }
 
 export interface ReportSummary {
@@ -304,6 +321,32 @@ export interface CreateBudgetLimitRequest {
 export interface UpdateBudgetLimitRequest {
   amount?: MoneyString;
   currency?: CurrencyCode;
+}
+
+export interface CreateReminderRequest {
+  title: string;
+  notes?: string;
+  amount: MoneyString;
+  currency: CurrencyCode;
+  accountId: EntityId;
+  categoryId?: EntityId | null;
+  scheduleType: ReminderScheduleType;
+  dueDate?: ISODateString | null;
+  dueDayOfMonth?: number | null;
+}
+
+export interface UpdateReminderRequest {
+  title?: string;
+  notes?: string | null;
+  amount?: MoneyString;
+  currency?: CurrencyCode;
+  accountId?: EntityId | null;
+  categoryId?: EntityId | null;
+  scheduleType?: ReminderScheduleType;
+  dueDate?: ISODateString | null;
+  dueDayOfMonth?: number | null;
+  isActive?: boolean;
+  lastCompletedAt?: ISODateString | null;
 }
 
 export interface PagedResponse<T> {

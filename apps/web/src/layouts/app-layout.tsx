@@ -1,9 +1,16 @@
-import type { SyncState, WorkspaceSummary } from '@finance/shared-types';
-import { Button, Card, SyncBadge, WorkspaceSwitcher } from '@finance/ui';
+import type { Reminder, SyncState, WorkspaceSummary } from '@finance/shared-types';
+import {
+  Button,
+  Card,
+  CurrencyAmount,
+  SyncBadge,
+  WorkspaceSwitcher,
+} from '@finance/ui';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
+import { getReminderOccurrenceState, sortRemindersByUrgency } from '../services/reminder-utils';
 import { useAuth } from '../features/auth/auth-context';
 import { useSync } from '../features/sync/sync-context';
 import { useWorkspace } from '../features/workspaces/workspace-context';
@@ -13,6 +20,7 @@ const navigation = [
   { to: '/', label: 'Dashboard' },
   { to: '/transactions', label: 'Transakcje' },
   { to: '/budgets', label: 'Budżety' },
+  { to: '/reminders', label: 'Przypomnienia' },
   { to: '/accounts', label: 'Konta' },
   { to: '/categories', label: 'Kategorie' },
   { to: '/admin', label: 'Admin' },
@@ -31,6 +39,7 @@ const workspaceRoleLabels: Record<WorkspaceSummary['role'], string> = {
   editor: 'Edytor',
   viewer: 'Podgląd',
 };
+const EMPTY_REMINDERS: Reminder[] = [];
 
 export function AppLayout() {
   const { user } = useAuth();
@@ -50,6 +59,20 @@ export function AppLayout() {
           : Promise.resolve(null),
       [activeWorkspaceId],
     ) ?? null;
+  const liveReminders = useLiveQuery(
+    () =>
+      activeWorkspaceId
+        ? db.reminders
+            .where('workspaceId')
+            .equals(activeWorkspaceId)
+            .toArray()
+        : Promise.resolve([] as Reminder[]),
+    [activeWorkspaceId],
+  );
+  const reminders = useMemo(
+    () => liveReminders ?? EMPTY_REMINDERS,
+    [liveReminders],
+  );
 
   const syncTone = !online
     ? 'warning'
@@ -86,6 +109,22 @@ export function AppLayout() {
   const moreIsActive = secondaryMobileItems.some(
     (item) => item.to === location.pathname,
   );
+  const today = new Date().toISOString().slice(0, 10);
+  const dueReminderEntries = useMemo(
+    () =>
+      sortRemindersByUrgency(
+        reminders.filter((reminder) => !reminder.deletedAt && reminder.isActive),
+        today,
+      )
+        .map((reminder) => ({
+          reminder,
+          state: getReminderOccurrenceState(reminder, today),
+        }))
+        .filter((entry) => entry.state.isDue),
+    [reminders, today],
+  );
+  const dueReminderPreview = dueReminderEntries.slice(0, 2);
+  const hiddenDueReminders = Math.max(0, dueReminderEntries.length - dueReminderPreview.length);
 
   return (
     <div className="min-h-screen overflow-x-clip bg-app-radial px-3 pb-36 pt-4 sm:px-6 sm:pt-6 lg:px-8">
@@ -229,6 +268,63 @@ export function AppLayout() {
             </div>
           </Card>
 
+          {dueReminderEntries.length > 0 && location.pathname !== '/reminders' ? (
+            <Card className="space-y-4 border-amber-300/20 bg-amber-400/10">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-amber-200/80">
+                    Na górze kolejki
+                  </p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {dueReminderEntries.length} płatności czeka na rozliczenie
+                  </h3>
+                  <p className="mt-1 text-sm text-stone-300">
+                    Rail pokazuje tylko terminy zaległe lub przypadające na dziś.
+                  </p>
+                </div>
+                <NavLink
+                  to="/reminders"
+                  className="inline-flex items-center justify-center rounded-full bg-lime-300 px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-lime-200"
+                >
+                  Otwórz przypomnienia
+                </NavLink>
+              </div>
+
+              <div className="grid gap-3 xl:grid-cols-2">
+                {dueReminderPreview.map(({ reminder, state }) => (
+                  <div
+                    key={reminder.id}
+                    className="rounded-[24px] border border-white/10 bg-stone-950/50 px-4 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {reminder.title}
+                        </p>
+                        <p className="mt-1 text-xs text-stone-400">
+                          {state.isOverdue
+                            ? `Zaległe od ${state.occurrenceDate}`
+                            : `Termin ${state.occurrenceDate}`}
+                        </p>
+                      </div>
+                      <CurrencyAmount
+                        value={reminder.amount}
+                        currency={reminder.currency}
+                        className="text-sm font-semibold text-amber-100"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {hiddenDueReminders > 0 ? (
+                <p className="text-sm text-stone-300">
+                  +{hiddenDueReminders} kolejnych przypomnień znajdziesz w sekcji
+                  „Przypomnienia”.
+                </p>
+              ) : null}
+            </Card>
+          ) : null}
           <Outlet />
         </main>
       </div>
